@@ -1,8 +1,8 @@
 <template>
   <div id="app">
     <div class="header">
-      <h1>水平面四周光晕效果</h1>
-      <p>平面放置在水平面上，光晕沿Y轴向上渐变流动</p>
+      <h1>专业级平面光晕效果</h1>
+      <p>使用后处理技术实现真实的发光效果</p>
     </div>
     
     <div class="controls">
@@ -11,14 +11,19 @@
         <input type="color" id="glow-color" v-model="glowColor">
       </div>
       <div class="control-group">
-        <label for="glow-intensity">光晕强度:</label>
-        <input type="range" id="glow-intensity" v-model="glowIntensity" min="1" max="10" step="0.5">
-        <span>{{ glowIntensity }}</span>
+        <label for="bloom-intensity">发光强度:</label>
+        <input type="range" id="bloom-intensity" v-model="bloomIntensity" min="0.1" max="2" step="0.1">
+        <span>{{ bloomIntensity }}</span>
       </div>
       <div class="control-group">
-        <label for="flow-speed">流动速度:</label>
-        <input type="range" id="flow-speed" v-model="flowSpeed" min="0" max="3" step="0.1">
-        <span>{{ flowSpeed }}</span>
+        <label for="bloom-threshold">发光阈值:</label>
+        <input type="range" id="bloom-threshold" v-model="bloomThreshold" min="0" max="1" step="0.05">
+        <span>{{ bloomThreshold }}</span>
+      </div>
+      <div class="control-group">
+        <label for="rotation-speed">旋转速度:</label>
+        <input type="range" id="rotation-speed" v-model="rotationSpeed" min="0" max="2" step="0.1">
+        <span>{{ rotationSpeed }}</span>
       </div>
     </div>
     
@@ -27,10 +32,10 @@
       
       <div class="info-panel">
         <h3>实现说明</h3>
-        <p>• 平面水平放置在XZ平面上</p>
-        <p>• 四周使用粒子系统创建光晕效果</p>
-        <p>• 光晕沿Y轴向上渐变并流动</p>
-        <p>• 使用自定义着色器实现渐变和动画</p>
+        <p>• 使用后处理(Post Processing)技术</p>
+        <p>• 真实的Bloom发光效果</p>
+        <p>• 平面边缘发射光晕</p>
+        <p>• 可调节发光参数</p>
       </div>
     </div>
   </div>
@@ -38,141 +43,72 @@
 
 <script>
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ref, onMounted, onUnmounted, watch } from 'vue';
-
-// 光晕粒子的顶点着色器
-const glowVertexShader = `
-  uniform float time;
-  uniform float flowSpeed;
-  varying float vAlpha;
-  varying vec3 vColor;
-  
-  void main() {
-    // 流动效果 - 随时间向上移动
-    vec3 pos = position;
-    pos.y += time * flowSpeed;
-    
-    // 重置位置（循环效果）
-    if (pos.y > 2.0) {
-      pos.y = -1.0;
-    }
-    
-    // 计算透明度 - 底部和顶部透明，中间最亮
-    float heightFactor = (pos.y + 1.0) / 3.0; // 从0到1
-    vAlpha = sin(heightFactor * 3.14159); // 正弦曲线渐变
-    
-    // 传递颜色
-    vColor = vec3(0.2, 0.5, 1.0);
-    
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-    gl_PointSize = 8.0;
-  }
-`;
-
-// 光晕粒子的片段着色器
-const glowFragmentShader = `
-  uniform vec3 glowColor;
-  varying float vAlpha;
-  varying vec3 vColor;
-  
-  void main() {
-    // 创建圆形粒子
-    vec2 coord = gl_PointCoord - vec2(0.5);
-    float distance = length(coord);
-    if (distance > 0.5) {
-      discard;
-    }
-    
-    // 中心亮边缘暗的渐变
-    float intensity = 1.0 - smoothstep(0.3, 0.5, distance);
-    
-    // 最终颜色
-    gl_FragColor = vec4(glowColor * intensity, vAlpha * intensity);
-  }
-`;
 
 export default {
   name: 'App',
   setup() {
     const container = ref(null);
     const glowColor = ref('#3a86ff');
-    const glowIntensity = ref('5');
-    const flowSpeed = ref('1.0');
+    const bloomIntensity = ref('1.0');
+    const bloomThreshold = ref('0.3');
+    const rotationSpeed = ref('0.5');
     
-    let scene, camera, renderer, plane, glowParticles, frameId;
+    let scene, camera, renderer, composer, bloomPass, plane, frameId;
     let clock = new THREE.Clock();
     
-    const createGlowEffect = () => {
-      // 创建粒子几何体
-      const particleCount = 2000;
-      const geometry = new THREE.BufferGeometry();
-      
-      const positions = new Float32Array(particleCount * 3);
-      const colors = new Float32Array(particleCount * 3);
-      
-      // 在平面四周创建粒子
-      const planeSize = 4;
-      for (let i = 0; i < particleCount; i++) {
-        const i3 = i * 3;
-        
-        // 随机分布在平面四周
-        const side = Math.floor(Math.random() * 4); // 0-3: 四个边
-        let x, z;
-        
-        switch (side) {
-          case 0: // 前边
-            x = (Math.random() - 0.5) * planeSize;
-            z = planeSize / 2;
-            break;
-          case 1: // 后边
-            x = (Math.random() - 0.5) * planeSize;
-            z = -planeSize / 2;
-            break;
-          case 2: // 左边
-            x = -planeSize / 2;
-            z = (Math.random() - 0.5) * planeSize;
-            break;
-          case 3: // 右边
-            x = planeSize / 2;
-            z = (Math.random() - 0.5) * planeSize;
-            break;
-        }
-        
-        // 随机高度（从底部开始）
-        const y = Math.random() * 2 - 1; // -1 到 1
-        
-        positions[i3] = x;
-        positions[i3 + 1] = y;
-        positions[i3 + 2] = z;
-        
-        // 随机颜色变化
-        const colorVariation = 0.2;
-        colors[i3] = 0.2 + Math.random() * colorVariation;
-        colors[i3 + 1] = 0.5 + Math.random() * colorVariation;
-        colors[i3 + 2] = 1.0 + Math.random() * colorVariation;
-      }
-      
-      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      
-      // 创建粒子材质
-      const material = new THREE.ShaderMaterial({
+    // 创建发光平面材质
+    const createEmissiveMaterial = () => {
+      return new THREE.ShaderMaterial({
         uniforms: {
           time: { value: 0 },
-          flowSpeed: { value: parseFloat(flowSpeed.value) },
-          glowColor: { value: new THREE.Color(glowColor.value) }
+          glowColor: { value: new THREE.Color(glowColor.value) },
+          glowIntensity: { value: 1.5 }
         },
-        vertexShader: glowVertexShader,
-        fragmentShader: glowFragmentShader,
+        vertexShader: `
+          varying vec2 vUv;
+          varying vec3 vPosition;
+          void main() {
+            vUv = uv;
+            vPosition = position;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float time;
+          uniform vec3 glowColor;
+          uniform float glowIntensity;
+          varying vec2 vUv;
+          varying vec3 vPosition;
+          
+          void main() {
+            // 计算边缘距离
+            float edgeX = min(vUv.x, 1.0 - vUv.x) * 2.0;
+            float edgeY = min(vUv.y, 1.0 - vUv.y) * 2.0;
+            float edge = min(edgeX, edgeY);
+            
+            // 边缘发光强度
+            float glow = pow(1.0 - edge, 3.0) * glowIntensity;
+            
+            // 添加流动效果
+            float flow = sin(time * 2.0 + vPosition.x * 3.0 + vPosition.z * 3.0) * 0.3 + 0.7;
+            
+            // 基础颜色（稍微透明）
+            vec3 baseColor = mix(vec3(0.2, 0.4, 0.8), glowColor, 0.5);
+            
+            // 最终颜色 - 只有边缘发光部分会被bloom处理
+            vec3 finalColor = baseColor + glowColor * glow * flow;
+            float alpha = 0.8 + glow * 0.2;
+            
+            gl_FragColor = vec4(finalColor, alpha);
+          }
+        `,
         transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false
+        side: THREE.DoubleSide
       });
-      
-      // 创建粒子系统
-      glowParticles = new THREE.Points(geometry, material);
-      glowParticles.position.y = 0.01; // 稍微高于平面
-      scene.add(glowParticles);
     };
     
     const initThreeJS = () => {
@@ -205,21 +141,36 @@ export default {
       gridHelper.position.y = -0.01;
       scene.add(gridHelper);
       
-      // 创建平面
+      // 创建发光平面
       const planeGeometry = new THREE.PlaneGeometry(4, 4);
-      const planeMaterial = new THREE.MeshPhongMaterial({
-        color: 0x2a6bc6,
-        transparent: true,
-        opacity: 0.8,
-        side: THREE.DoubleSide
-      });
+      const planeMaterial = createEmissiveMaterial();
       
       plane = new THREE.Mesh(planeGeometry, planeMaterial);
       plane.rotation.x = -Math.PI / 2;
       scene.add(plane);
       
-      // 创建光晕效果
-      createGlowEffect();
+      // 创建平面边框（增强发光效果）
+      const edgesGeometry = new THREE.EdgesGeometry(planeGeometry);
+      const lineMaterial = new THREE.LineBasicMaterial({ 
+        color: 0x3a86ff, 
+        linewidth: 2 
+      });
+      const edges = new THREE.LineSegments(edgesGeometry, lineMaterial);
+      edges.rotation.x = -Math.PI / 2;
+      plane.add(edges);
+      
+      // 设置后处理
+      composer = new EffectComposer(renderer);
+      composer.addPass(new RenderPass(scene, camera));
+      
+      // 添加Bloom效果
+      bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(container.value.clientWidth, container.value.clientHeight),
+        parseFloat(bloomIntensity.value),
+        parseFloat(bloomThreshold.value),
+        0.4
+      );
+      composer.addPass(bloomPass);
       
       // 添加坐标轴
       const axesHelper = new THREE.AxesHelper(3);
@@ -232,23 +183,30 @@ export default {
       camera.aspect = container.value.clientWidth / container.value.clientHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(container.value.clientWidth, container.value.clientHeight);
+      composer.setSize(container.value.clientWidth, container.value.clientHeight);
     };
     
     const render = () => {
       frameId = requestAnimationFrame(render);
       
       // 更新时间
-      if (glowParticles) {
-        glowParticles.material.uniforms.time.value = clock.getElapsedTime();
+      const elapsedTime = clock.getElapsedTime();
+      if (plane && plane.material.uniforms.time) {
+        plane.material.uniforms.time.value = elapsedTime;
+      }
+      
+      // 旋转平面
+      if (plane) {
+        plane.rotation.y += parseFloat(rotationSpeed.value) * 0.01;
       }
       
       // 缓慢旋转相机
-      const time = clock.getElapsedTime() * 0.2;
+      const time = elapsedTime * 0.2;
       camera.position.x = 6 * Math.cos(time);
       camera.position.z = 6 * Math.sin(time);
       camera.lookAt(0, 0, 0);
       
-      renderer.render(scene, camera);
+      composer.render();
     };
     
     onMounted(() => {
@@ -266,22 +224,29 @@ export default {
     });
     
     watch(glowColor, (newColor) => {
-      if (glowParticles) {
-        glowParticles.material.uniforms.glowColor.value = new THREE.Color(newColor);
+      if (plane && plane.material.uniforms.glowColor) {
+        plane.material.uniforms.glowColor.value = new THREE.Color(newColor);
       }
     });
     
-    watch(flowSpeed, (newSpeed) => {
-      if (glowParticles) {
-        glowParticles.material.uniforms.flowSpeed.value = parseFloat(newSpeed);
+    watch(bloomIntensity, (newIntensity) => {
+      if (bloomPass) {
+        bloomPass.strength = parseFloat(newIntensity);
+      }
+    });
+    
+    watch(bloomThreshold, (newThreshold) => {
+      if (bloomPass) {
+        bloomPass.threshold = parseFloat(newThreshold);
       }
     });
     
     return {
       container,
       glowColor,
-      glowIntensity,
-      flowSpeed
+      bloomIntensity,
+      bloomThreshold,
+      rotationSpeed
     };
   }
 };
@@ -333,13 +298,13 @@ h1 {
 .controls {
   display: flex;
   justify-content: center;
-  gap: 25px;
+  gap: 20px;
   padding: 15px;
   background: rgba(255, 255, 255, 0.05);
   border-radius: 12px;
   margin-bottom: 25px;
   flex-wrap: wrap;
-  max-width: 900px;
+  max-width: 1000px;
   margin-left: auto;
   margin-right: auto;
   backdrop-filter: blur(10px);
@@ -356,6 +321,7 @@ label {
   font-weight: 600;
   color: #3a86ff;
   font-size: 0.9rem;
+  min-width: 80px;
 }
 
 input[type="color"] {
@@ -368,7 +334,7 @@ input[type="color"] {
 }
 
 input[type="range"] {
-  width: 120px;
+  width: 100px;
   height: 6px;
   -webkit-appearance: none;
   background: linear-gradient(to right, #4361ee, #3a86ff);
@@ -448,6 +414,15 @@ input[type="range"]::-webkit-slider-thumb {
   
   .canvas-container {
     height: 400px;
+  }
+  
+  .control-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  label {
+    min-width: 100px;
   }
 }
 </style>
