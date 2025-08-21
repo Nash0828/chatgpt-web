@@ -2,7 +2,7 @@
   <div id="app">
     <div class="header">
       <h1>水平面四周光晕效果</h1>
-      <p>平面放置在水平面上，光晕沿Y轴向上渐变</p>
+      <p>平面放置在水平面上，光晕沿Y轴向上渐变流动</p>
     </div>
     
     <div class="controls">
@@ -11,13 +11,13 @@
         <input type="color" id="glow-color" v-model="glowColor">
       </div>
       <div class="control-group">
-        <label for="glow-height">光晕高度:</label>
-        <input type="range" id="glow-height" v-model="glowHeight" min="0.5" max="3" step="0.1">
-        <span>{{ glowHeight }}</span>
+        <label for="glow-intensity">光晕强度:</label>
+        <input type="range" id="glow-intensity" v-model="glowIntensity" min="1" max="10" step="0.5">
+        <span>{{ glowIntensity }}</span>
       </div>
       <div class="control-group">
         <label for="flow-speed">流动速度:</label>
-        <input type="range" id="flow-speed" v-model="flowSpeed" min="0" max="2" step="0.1">
+        <input type="range" id="flow-speed" v-model="flowSpeed" min="0" max="3" step="0.1">
         <span>{{ flowSpeed }}</span>
       </div>
     </div>
@@ -27,9 +27,10 @@
       
       <div class="info-panel">
         <h3>实现说明</h3>
-        <p>平面放置在水平面(XZ平面)上，四周光晕沿Y轴向上渐变</p>
-        <p>光晕具有流动效果，从平面边缘向上扩散并逐渐消失</p>
-        <p>使用顶点着色器实现高度渐变和流动动画</p>
+        <p>• 平面水平放置在XZ平面上</p>
+        <p>• 四周使用粒子系统创建光晕效果</p>
+        <p>• 光晕沿Y轴向上渐变并流动</p>
+        <p>• 使用自定义着色器实现渐变和动画</p>
       </div>
     </div>
   </div>
@@ -39,56 +40,54 @@
 import * as THREE from 'three';
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 
-// 顶点着色器 - 添加高度信息和流动效果
-const vertexShader = `
+// 光晕粒子的顶点着色器
+const glowVertexShader = `
   uniform float time;
-  varying vec3 vPosition;
-  varying vec2 vUv;
+  uniform float flowSpeed;
+  varying float vAlpha;
+  varying vec3 vColor;
   
   void main() {
-    vPosition = position;
-    vUv = uv;
-    
-    // 添加轻微的波浪效果使平面更自然
+    // 流动效果 - 随时间向上移动
     vec3 pos = position;
-    float wave = sin(position.x * 2.0 + time) * 0.02 + cos(position.z * 2.0 + time) * 0.02;
-    pos.y += wave;
+    pos.y += time * flowSpeed;
+    
+    // 重置位置（循环效果）
+    if (pos.y > 2.0) {
+      pos.y = -1.0;
+    }
+    
+    // 计算透明度 - 底部和顶部透明，中间最亮
+    float heightFactor = (pos.y + 1.0) / 3.0; // 从0到1
+    vAlpha = sin(heightFactor * 3.14159); // 正弦曲线渐变
+    
+    // 传递颜色
+    vColor = vec3(0.2, 0.5, 1.0);
     
     gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    gl_PointSize = 8.0;
   }
 `;
 
-// 片段着色器 - 创建四周向上渐变的光晕
-const fragmentShader = `
+// 光晕粒子的片段着色器
+const glowFragmentShader = `
   uniform vec3 glowColor;
-  uniform float glowHeight;
-  uniform float time;
-  varying vec3 vPosition;
-  varying vec2 vUv;
+  varying float vAlpha;
+  varying vec3 vColor;
   
   void main() {
-    // 计算到边缘的距离（0到1之间）
-    float edgeX = min(vUv.x, 1.0 - vUv.x) * 2.0;
-    float edgeZ = min(vUv.y, 1.0 - vUv.y) * 2.0;
-    float edgeDistance = min(edgeX, edgeZ);
+    // 创建圆形粒子
+    vec2 coord = gl_PointCoord - vec2(0.5);
+    float distance = length(coord);
+    if (distance > 0.5) {
+      discard;
+    }
     
-    // 边缘检测 - 只在靠近边缘的地方产生光晕
-    float edgeFactor = 1.0 - smoothstep(0.3, 0.5, edgeDistance);
+    // 中心亮边缘暗的渐变
+    float intensity = 1.0 - smoothstep(0.3, 0.5, distance);
     
-    // 计算高度因子 - Y轴向上渐变
-    float heightFactor = 1.0 - smoothstep(0.0, glowHeight, vPosition.y);
-    
-    // 流动效果 - 随时间变化
-    float flow = sin(time * 2.0 + vPosition.x * 5.0 + vPosition.z * 5.0) * 0.5 + 0.5;
-    
-    // 组合所有因素
-    float glowIntensity = edgeFactor * heightFactor * flow * 2.0;
-    
-    // 设置最终颜色
-    vec3 finalColor = glowColor * glowIntensity;
-    float alpha = glowIntensity * 0.8;
-    
-    gl_FragColor = vec4(finalColor, alpha);
+    // 最终颜色
+    gl_FragColor = vec4(glowColor * intensity, vAlpha * intensity);
   }
 `;
 
@@ -97,36 +96,108 @@ export default {
   setup() {
     const container = ref(null);
     const glowColor = ref('#3a86ff');
-    const glowHeight = ref('1.5');
-    const flowSpeed = ref('0.8');
+    const glowIntensity = ref('5');
+    const flowSpeed = ref('1.0');
     
-    let scene, camera, renderer, plane, glowMesh, frameId;
+    let scene, camera, renderer, plane, glowParticles, frameId;
     let clock = new THREE.Clock();
+    
+    const createGlowEffect = () => {
+      // 创建粒子几何体
+      const particleCount = 2000;
+      const geometry = new THREE.BufferGeometry();
+      
+      const positions = new Float32Array(particleCount * 3);
+      const colors = new Float32Array(particleCount * 3);
+      
+      // 在平面四周创建粒子
+      const planeSize = 4;
+      for (let i = 0; i < particleCount; i++) {
+        const i3 = i * 3;
+        
+        // 随机分布在平面四周
+        const side = Math.floor(Math.random() * 4); // 0-3: 四个边
+        let x, z;
+        
+        switch (side) {
+          case 0: // 前边
+            x = (Math.random() - 0.5) * planeSize;
+            z = planeSize / 2;
+            break;
+          case 1: // 后边
+            x = (Math.random() - 0.5) * planeSize;
+            z = -planeSize / 2;
+            break;
+          case 2: // 左边
+            x = -planeSize / 2;
+            z = (Math.random() - 0.5) * planeSize;
+            break;
+          case 3: // 右边
+            x = planeSize / 2;
+            z = (Math.random() - 0.5) * planeSize;
+            break;
+        }
+        
+        // 随机高度（从底部开始）
+        const y = Math.random() * 2 - 1; // -1 到 1
+        
+        positions[i3] = x;
+        positions[i3 + 1] = y;
+        positions[i3 + 2] = z;
+        
+        // 随机颜色变化
+        const colorVariation = 0.2;
+        colors[i3] = 0.2 + Math.random() * colorVariation;
+        colors[i3 + 1] = 0.5 + Math.random() * colorVariation;
+        colors[i3 + 2] = 1.0 + Math.random() * colorVariation;
+      }
+      
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      
+      // 创建粒子材质
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          time: { value: 0 },
+          flowSpeed: { value: parseFloat(flowSpeed.value) },
+          glowColor: { value: new THREE.Color(glowColor.value) }
+        },
+        vertexShader: glowVertexShader,
+        fragmentShader: glowFragmentShader,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      // 创建粒子系统
+      glowParticles = new THREE.Points(geometry, material);
+      glowParticles.position.y = 0.01; // 稍微高于平面
+      scene.add(glowParticles);
+    };
     
     const initThreeJS = () => {
       // 创建场景
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x0a0a1a);
       
-      // 创建相机 - 从斜上方视角观看水平面
+      // 创建相机
       const aspectRatio = container.value.clientWidth / container.value.clientHeight;
       camera = new THREE.PerspectiveCamera(60, aspectRatio, 0.1, 1000);
-      camera.position.set(5, 3, 5);
+      camera.position.set(6, 4, 6);
       camera.lookAt(0, 0, 0);
       
       // 创建渲染器
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(container.value.clientWidth, container.value.clientHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
       container.value.appendChild(renderer.domElement);
       
-      // 添加环境光
+      // 添加灯光
       const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
       scene.add(ambientLight);
       
-      // 添加定向光
       const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
       directionalLight.position.set(5, 10, 7);
-      directionalLight.castShadow = true;
       scene.add(directionalLight);
       
       // 创建网格地面
@@ -134,41 +205,23 @@ export default {
       gridHelper.position.y = -0.01;
       scene.add(gridHelper);
       
-      // 创建平面几何体（水平放置）
+      // 创建平面
       const planeGeometry = new THREE.PlaneGeometry(4, 4);
       const planeMaterial = new THREE.MeshPhongMaterial({
-        color: 0x4cc9f0,
+        color: 0x2a6bc6,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.8,
         side: THREE.DoubleSide
       });
       
       plane = new THREE.Mesh(planeGeometry, planeMaterial);
-      plane.rotation.x = -Math.PI / 2; // 水平放置
-      plane.position.y = 0;
+      plane.rotation.x = -Math.PI / 2;
       scene.add(plane);
       
-      // 创建光晕几何体（围绕平面的四周）
-      const glowGeometry = new THREE.BoxGeometry(4.2, 1.5, 4.2);
-      const glowMaterial = new THREE.ShaderMaterial({
-        uniforms: {
-          glowColor: { value: new THREE.Color(glowColor.value) },
-          glowHeight: { value: parseFloat(glowHeight.value) },
-          time: { value: 0 }
-        },
-        vertexShader: vertexShader,
-        fragmentShader: fragmentShader,
-        transparent: true,
-        side: THREE.DoubleSide,
-        blending: THREE.AdditiveBlending
-      });
+      // 创建光晕效果
+      createGlowEffect();
       
-      glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
-      glowMesh.rotation.x = -Math.PI / 2; // 水平放置
-      glowMesh.position.y = parseFloat(glowHeight.value) / 2; // 居中于高度
-      scene.add(glowMesh);
-      
-      // 添加坐标轴辅助工具
+      // 添加坐标轴
       const axesHelper = new THREE.AxesHelper(3);
       scene.add(axesHelper);
     };
@@ -184,15 +237,15 @@ export default {
     const render = () => {
       frameId = requestAnimationFrame(render);
       
-      // 更新时间uniform
-      if (glowMesh) {
-        glowMesh.material.uniforms.time.value = clock.getElapsedTime() * parseFloat(flowSpeed.value);
+      // 更新时间
+      if (glowParticles) {
+        glowParticles.material.uniforms.time.value = clock.getElapsedTime();
       }
       
-      // 轻微旋转相机，更好地展示效果
-      const time = clock.getElapsedTime();
-      camera.position.x = 5 * Math.cos(time * 0.1);
-      camera.position.z = 5 * Math.sin(time * 0.1);
+      // 缓慢旋转相机
+      const time = clock.getElapsedTime() * 0.2;
+      camera.position.x = 6 * Math.cos(time);
+      camera.position.z = 6 * Math.sin(time);
       camera.lookAt(0, 0, 0);
       
       renderer.render(scene, camera);
@@ -213,27 +266,21 @@ export default {
     });
     
     watch(glowColor, (newColor) => {
-      if (glowMesh) {
-        glowMesh.material.uniforms.glowColor.value = new THREE.Color(newColor);
+      if (glowParticles) {
+        glowParticles.material.uniforms.glowColor.value = new THREE.Color(newColor);
       }
     });
     
-    watch(glowHeight, (newHeight) => {
-      if (glowMesh) {
-        const height = parseFloat(newHeight);
-        glowMesh.material.uniforms.glowHeight.value = height;
-        
-        // 更新光晕网格几何体高度
-        glowMesh.geometry.dispose();
-        glowMesh.geometry = new THREE.BoxGeometry(4.2, height, 4.2);
-        glowMesh.position.y = height / 2;
+    watch(flowSpeed, (newSpeed) => {
+      if (glowParticles) {
+        glowParticles.material.uniforms.flowSpeed.value = parseFloat(newSpeed);
       }
     });
     
     return {
       container,
       glowColor,
-      glowHeight,
+      glowIntensity,
       flowSpeed
     };
   }
