@@ -1,7 +1,25 @@
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+// 即使没有法线贴图，也可以创建简单的法线贴图来增强立体感
+const createSimpleNormalMap = (intensity = 1.0) => {
+  const size = 128;
+  const data = new Uint8Array(size * size * 4);
+  
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size; j++) {
+      const index = (i * size + j) * 4;
+      // 创建简单的法线图案
+      data[index] = 128 + Math.sin(i * 0.1) * 127 * intensity;     // R
+      data[index + 1] = 128 + Math.cos(j * 0.1) * 127 * intensity; // G
+      data[index + 2] = 255; // B (指向正前方)
+      data[index + 3] = 255; // A
+    }
+  }
+  
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.needsUpdate = true;
+  return texture;
+};
 
-const loader = new GLTFLoader();
+// 应用法线贴图
 loader.load('model.glb', (gltf) => {
   const model = gltf.scene;
   
@@ -9,34 +27,11 @@ loader.load('model.glb', (gltf) => {
     if (node.isMesh) {
       const material = node.material;
       
-      // 如果材质已经有颜色贴图，可以调整其强度
-      if (material.map) {
-        // 创建更饱和的颜色贴图
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = material.map.image.width;
-        canvas.height = material.map.image.height;
-        
-        ctx.drawImage(material.map.image, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-        
-        // 增强颜色饱和度
-        for (let i = 0; i < data.length; i += 4) {
-          // 增加RGB值来加深颜色
-          data[i] = Math.min(255, data[i] * 1.2);     // R
-          data[i + 1] = Math.min(255, data[i + 1] * 1.2); // G
-          data[i + 2] = Math.min(255, data[i + 2] * 1.2); // B
-        }
-        
-        ctx.putImageData(imageData, 0, 0);
-        
-        const enhancedTexture = new THREE.CanvasTexture(canvas);
-        material.map = enhancedTexture;
+      if (material.isMeshStandardMaterial && !material.normalMap) {
+        material.normalMap = createSimpleNormalMap(0.3);
+        material.normalScale.set(0.5, 0.5);
         material.needsUpdate = true;
       }
     }
   });
-  
-  scene.add(model);
 });
