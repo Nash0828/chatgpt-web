@@ -1,126 +1,52 @@
-<template>
-  <div ref="container" class="three-container"></div>
-</template>
-
-<script>
-import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-
-export default {
-  name: 'GlowingPlane',
-  data() {
-    return {
-      scene: null,
-      camera: null,
-      renderer: null,
-      composer: null,
-      plane: null,
-      animationId: null
-    };
-  },
-  mounted() {
-    this.initThree();
-    this.animate();
-    window.addEventListener('resize', this.handleResize);
-  },
-  beforeDestroy() {
-    window.removeEventListener('resize', this.handleResize);
-    cancelAnimationFrame(this.animationId);
-    if (this.renderer) {
-      this.renderer.dispose();
+function calculateCircleIntersectionPoints(r1, r2) {
+    // 确保r1是大圆半径，r2是小圆半径
+    if (r1 < r2) {
+        [r1, r2] = [r2, r1];
     }
-  },
-  methods: {
-    initThree() {
-      // 初始化场景
-      this.scene = new THREE.Scene();
-      
-      // 初始化相机
-      this.camera = new THREE.PerspectiveCamera(
-        75,
-        this.$refs.container.clientWidth / this.$refs.container.clientHeight,
-        0.1,
-        1000
-      );
-      this.camera.position.set(0, 5, 5);
-      this.camera.lookAt(0, 0, 0);
-      
-      // 初始化渲染器
-      this.renderer = new THREE.WebGLRenderer({ antialias: true });
-      this.renderer.setSize(
-        this.$refs.container.clientWidth,
-        this.$refs.container.clientHeight
-      );
-      this.$refs.container.appendChild(this.renderer.domElement);
-      
-      // 创建灰色平面
-      const planeGeometry = new THREE.BoxGeometry(5, 5, 0.05);
-      const planeMaterial = new THREE.MeshStandardMaterial({
-        color: 0x808080, // 灰色
-        emissive: 0x0000ff, // 蓝色自发光
-        emissiveIntensity: 0.5 // 自发光强度
-      });
-      this.plane = new THREE.Mesh(planeGeometry, planeMaterial);
-      this.plane.rotation.x = -Math.PI / 2; // 使平面水平
-      this.scene.add(this.plane);
-      
-      // 添加光源
-      const ambientLight = new THREE.AmbientLight(0x404040);
-      this.scene.add(ambientLight);
-      
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-      directionalLight.position.set(1, 1, 1);
-      this.scene.add(directionalLight);
-      
-      // 初始化后处理
-      this.composer = new EffectComposer(this.renderer);
-      this.composer.addPass(new RenderPass(this.scene, this.camera));
-      
-      // 创建Bloom效果
-      const bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(
-          this.$refs.container.clientWidth,
-          this.$refs.container.clientHeight
-        ),
-        1.5, // 强度
-        0.4, // 半径
-        0.85 // 阈值
-      );
-      this.composer.addPass(bloomPass);
-      
-      // 调整Bloom参数
-      bloomPass.threshold = 0;
-      bloomPass.strength = 2;
-      bloomPass.radius = 0.5;
-    },
-    animate() {
-      this.animationId = requestAnimationFrame(this.animate);
-      this.composer.render();
-    },
-    handleResize() {
-      this.camera.aspect =
-        this.$refs.container.clientWidth / this.$refs.container.clientHeight;
-      this.camera.updateProjectionMatrix();
-      this.renderer.setSize(
-        this.$refs.container.clientWidth,
-        this.$refs.container.clientHeight
-      );
-      this.composer.setSize(
-        this.$refs.container.clientWidth,
-        this.$refs.container.clientHeight
-      );
+    
+    const points = [];
+    // 4条直线，将圆分成8等份，每条线间隔45度
+    const angles = [0, 45, 90, 135, 180, 225, 270, 315];
+    
+    // 计算每条线与两个圆的交点
+    for (let angle of angles) {
+        // 转换为弧度
+        const radian = angle * Math.PI / 180;
+        
+        // 计算大圆上的点
+        const x1 = r1 * Math.sin(radian);
+        const y1 = -r1 * Math.cos(radian); // 注意：y坐标取负，因为画布坐标系y轴向下
+        
+        // 计算小圆上的点
+        const x2 = r2 * Math.sin(radian);
+        const y2 = -r2 * Math.cos(radian);
+        
+        // 添加大圆和小圆上的点
+        points.push({x: x1, y: y1, radius: r1, angle: angle});
+        points.push({x: x2, y: y2, radius: r2, angle: angle});
     }
-  }
-};
-</script>
-
-<style scoped>
-.three-container {
-  width: 100%;
-  height: 100vh;
-  position: relative;
-  overflow: hidden;
+    
+    // 按指定规则排序：从6点钟方向(270度)开始顺时针，先大圆后小圆
+    points.sort((a, b) => {
+        // 调整角度，使270度(6点钟方向)为起点
+        let angleA = (a.angle + 90) % 360;
+        let angleB = (b.angle + 90) % 360;
+        
+        // 如果角度不同，按角度排序
+        if (angleA !== angleB) {
+            return angleA - angleB;
+        }
+        
+        // 角度相同，按半径排序（大圆在前）
+        return b.radius - a.radius;
+    });
+    
+    // 只返回点的坐标数组
+    return points.map(point => [point.x, point.y]);
 }
-</style>
+
+// 使用示例
+const r1 = 100; // 大圆半径
+const r2 = 60;  // 小圆半径
+const intersectionPoints = calculateCircleIntersectionPoints(r1, r2);
+console.log(intersectionPoints);
