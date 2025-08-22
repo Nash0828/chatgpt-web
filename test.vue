@@ -1,52 +1,46 @@
-function calculateCircleIntersectionPoints(r1, r2) {
-    // 确保r1是大圆半径，r2是小圆半径
-    if (r1 < r2) {
-        [r1, r2] = [r2, r1];
-    }
-    
-    const points = [];
-    // 4条直线，将圆分成8等份，每条线间隔45度
-    const angles = [0, 45, 90, 135, 180, 225, 270, 315];
-    
-    // 计算每条线与两个圆的交点
-    for (let angle of angles) {
-        // 转换为弧度
-        const radian = angle * Math.PI / 180;
-        
-        // 计算大圆上的点
-        const x1 = r1 * Math.sin(radian);
-        const y1 = -r1 * Math.cos(radian); // 注意：y坐标取负，因为画布坐标系y轴向下
-        
-        // 计算小圆上的点
-        const x2 = r2 * Math.sin(radian);
-        const y2 = -r2 * Math.cos(radian);
-        
-        // 添加大圆和小圆上的点
-        points.push({x: x1, y: y1, radius: r1, angle: angle});
-        points.push({x: x2, y: y2, radius: r2, angle: angle});
-    }
-    
-    // 按指定规则排序：从6点钟方向(270度)开始顺时针，先大圆后小圆
-    points.sort((a, b) => {
-        // 调整角度，使270度(6点钟方向)为起点
-        let angleA = (a.angle + 90) % 360;
-        let angleB = (b.angle + 90) % 360;
-        
-        // 如果角度不同，按角度排序
-        if (angleA !== angleB) {
-            return angleA - angleB;
-        }
-        
-        // 角度相同，按半径排序（大圆在前）
-        return b.radius - a.radius;
-    });
-    
-    // 只返回点的坐标数组
-    return points.map(point => [point.x, point.y]);
-}
+// 创建深色乘法贴图
+const createMultiplyTexture = (color, width = 512, height = 512) => {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, width, height);
+  
+  return new THREE.CanvasTexture(canvas);
+};
 
-// 使用示例
-const r1 = 100; // 大圆半径
-const r2 = 60;  // 小圆半径
-const intersectionPoints = calculateCircleIntersectionPoints(r1, r2);
-console.log(intersectionPoints);
+// 应用乘法贴图
+loader.load('model.glb', (gltf) => {
+  const model = gltf.scene;
+  
+  model.traverse((node) => {
+    if (node.isMesh) {
+      const material = node.material;
+      
+      // 创建深色乘法贴图（例如深棕色）
+      const multiplyTexture = createMultiplyTexture('#8B4513');
+      
+      // 如果是标准材质，可以使用emissive贴图来增强颜色
+      if (material.isMeshStandardMaterial) {
+        material.emissive = new THREE.Color(0x333333); // 轻微自发光
+        material.emissiveIntensity = 0.1;
+      }
+      
+      // 或者创建自定义着色器材质来应用乘法
+      material.onBeforeCompile = (shader) => {
+        shader.uniforms.multiplyTexture = { value: multiplyTexture };
+        
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <map_fragment>',
+          `
+          #include <map_fragment>
+          vec4 multiplyColor = texture2D(multiplyTexture, vUv);
+          diffuseColor.rgb *= multiplyColor.rgb * 1.5;
+          `
+        );
+      };
+    }
+  });
+});
