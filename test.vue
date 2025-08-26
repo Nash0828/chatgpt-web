@@ -1,67 +1,51 @@
-import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+const glowVertexShader = `
+    varying vec2 vUv;
+    void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+`;
 
-// 创建场景、相机等
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer();
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
+const glowFragmentShader = `
+    uniform vec3 glowColor;
+    uniform float glowIntensity;
+    uniform float glowRadius;
+    varying vec2 vUv;
+    
+    void main() {
+        // 计算到圆心的距离
+        float distance = length(vUv - vec2(0.5, 0.5));
+        
+        // 边缘光晕效果
+        float glow = smoothstep(0.5 - glowRadius, 0.5, distance);
+        
+        // 基础颜色
+        vec4 baseColor = vec4(1.0, 1.0, 1.0, 1.0);
+        
+        // 混合光晕颜色
+        vec4 finalColor = mix(baseColor, vec4(glowColor, 1.0), glow * glowIntensity);
+        
+        gl_FragColor = finalColor;
+    }
+`;
 
-// 创建圆盘几何体
-const geometry = new THREE.CircleGeometry(5, 32);
-const material = new THREE.MeshBasicMaterial({ 
-    color: 0xffffff,
-    emissive: 0x0000ff, // 蓝色自发光
-    emissiveIntensity: 0 // 初始强度为0
+// 创建带光晕的材质
+const glowMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+        glowColor: { value: new THREE.Color(0x0000ff) },
+        glowIntensity: { value: 0.0 }, // 初始强度为0
+        glowRadius: { value: 0.1 }
+    },
+    vertexShader: glowVertexShader,
+    fragmentShader: glowFragmentShader
 });
-const disk = new THREE.Mesh(geometry, material);
+
+const disk = new THREE.Mesh(geometry, glowMaterial);
 scene.add(disk);
 
-// 创建后期处理器
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-
-// 创建辉光效果
-const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
-    1.5, // 强度
-    0.4, // 半径
-    0.85 // 阈值
-);
-composer.addPass(bloomPass);
-
-// 控制光晕的变量
-let isGlowing = false;
-
-// 切换光晕效果函数
+// 切换光晕效果
 function toggleGlow() {
     isGlowing = !isGlowing;
-    
-    if (isGlowing) {
-        material.emissiveIntensity = 1; // 启用自发光
-        bloomPass.strength = 1.5; // 增强辉光强度
-    } else {
-        material.emissiveIntensity = 0; // 关闭自发光
-        bloomPass.strength = 0; // 关闭辉光
-    }
+    glowMaterial.uniforms.glowIntensity.value = isGlowing ? 1.0 : 0.0;
+    glowMaterial.needsUpdate = true;
 }
-
-// 渲染循环
-function animate() {
-    requestAnimationFrame(animate);
-    composer.render();
-}
-
-// 添加切换按钮
-const button = document.createElement('button');
-button.textContent = '切换光晕';
-button.style.position = 'absolute';
-button.style.top = '10px';
-button.style.left = '10px';
-button.addEventListener('click', toggleGlow);
-document.body.appendChild(button);
-
-animate();
