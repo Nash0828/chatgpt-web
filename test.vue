@@ -190,7 +190,7 @@
 <body>
     <div id="app">
         <h1>Vue 3 + Three.js 电灯泡光束效果</h1>
-        <p class="description">使用体积光效果实现可见的光束，模拟真实电灯泡的照明效果</p>
+        <p class="description">开放式光束圆锥体 - 无顶盖设计，更真实的灯光效果</p>
         
         <div class="container">
             <div class="canvas-container">
@@ -226,6 +226,15 @@
                 </div>
                 
                 <div class="slider-container">
+                    <label for="beamLength">光束长度: {{ beamLength.toFixed(1) }}</label>
+                    <input type="range" id="beamLength" min="3" max="10" step="0.5" v-model.number="beamLength">
+                    <div class="value-display">
+                        <span>短</span>
+                        <span>长</span>
+                    </div>
+                </div>
+                
+                <div class="slider-container">
                     <label for="rotationSpeed">旋转速度: {{ rotationSpeed.toFixed(3) }}</label>
                     <input type="range" id="rotationSpeed" min="0" max="0.01" step="0.001" v-model.number="rotationSpeed">
                     <div class="value-display">
@@ -251,17 +260,17 @@
                 
                 <div class="light-intensity">
                     <span class="icon">💡</span>
-                    <span>当前光照强度: {{ (lightIntensity * 33).toFixed(0) }}%</span>
+                    <span>光束长度: {{ beamLength.toFixed(1) }} 单位</span>
                 </div>
                 
                 <div class="instructions">
-                    <p><strong>使用说明:</strong> 调整滑块控制灯光参数，切换光束显示可以看到体积光效果。尝试不同的预设效果！</p>
+                    <p><strong>使用说明:</strong> 开放式光束圆锥体，无顶盖设计，可以看到光束从灯泡发出并向下散射的效果。</p>
                 </div>
             </div>
         </div>
         
         <div class="footer">
-            <p>Vue 3 Composition API 与 Three.js 光束效果示例</p>
+            <p>Vue 3 Composition API 与 Three.js 开放式光束效果</p>
         </div>
     </div>
 
@@ -274,26 +283,35 @@
                 const lightAngle = ref(35);
                 const lightIntensity = ref(1.5);
                 const beamIntensity = ref(0.8);
+                const beamLength = ref(5);
                 const rotationSpeed = ref(0.003);
                 const showBeam = ref(true);
                 
                 // Three.js 相关变量
                 let scene, camera, renderer, bulbGroup, spotLight, beamCone;
                 
-                // 创建光束效果
+                // 创建开放式光束圆锥体（无顶盖）
+                const createOpenConeGeometry = (radius, height, radialSegments, openTop = true) => {
+                    const geometry = new THREE.ConeGeometry(radius, height, radialSegments, 1, openTop);
+                    return geometry;
+                };
+                
+                // 创建光束效果 - 开放式圆锥体
                 const createLightBeam = () => {
-                    // 创建圆锥体作为光束
-                    const coneGeometry = new THREE.ConeGeometry(0.1, 5, 32, 5, true);
+                    // 创建开放式圆锥体作为光束（无顶盖）
+                    const coneGeometry = createOpenConeGeometry(0.1, beamLength.value, 32, true);
+                    
                     const coneMaterial = new THREE.MeshPhongMaterial({
                         color: 0xffffaa,
                         transparent: true,
-                        opacity: 0.6,
+                        opacity: beamIntensity.value * 0.6,
                         side: THREE.DoubleSide,
-                        blending: THREE.AdditiveBlending
+                        blending: THREE.AdditiveBlending,
+                        wireframe: false
                     });
                     
                     beamCone = new THREE.Mesh(coneGeometry, coneMaterial);
-                    beamCone.position.y = -2;
+                    beamCone.position.y = -beamLength.value / 2;
                     beamCone.rotation.x = Math.PI;
                     beamCone.visible = showBeam.value;
                     
@@ -304,13 +322,20 @@
                 const updateLightBeam = () => {
                     if (!beamCone) return;
                     
+                    // 移除旧的光束
+                    bulbGroup.remove(beamCone);
+                    
+                    // 创建新的光束（更新长度）
+                    beamCone = createLightBeam();
+                    bulbGroup.add(beamCone);
+                    
                     // 根据灯光角度调整光束圆锥的角度
-                    const scale = Math.tan(spotLight.angle) * 5;
+                    const scale = Math.tan(spotLight.angle) * beamLength.value;
                     beamCone.scale.set(scale, 1, scale);
                     
                     // 更新光束材质
                     beamCone.material.opacity = beamIntensity.value * 0.6;
-                    beamCone.material.color = new THREE.Color(0xffff00).lerp(
+                    beamCone.material.color = new THREE.Color(0xffffaa).lerp(
                         new THREE.Color(0xffaa00), 
                         1 - (lightIntensity.value / 3)
                     );
@@ -323,11 +348,11 @@
                     // 创建场景
                     scene = new THREE.Scene();
                     scene.background = new THREE.Color(0x0a0a20);
-                    scene.fog = new THREE.Fog(0x0a0a20, 5, 15);
+                    scene.fog = new THREE.Fog(0x0a0a20, 5, 20);
                     
                     // 创建相机
                     camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
-                    camera.position.set(2, 3, 5);
+                    camera.position.set(3, 4, 6);
                     camera.lookAt(0, 0, 0);
                     
                     // 创建渲染器
@@ -383,7 +408,7 @@
                     spotLight.angle = lightAngle.value * Math.PI / 180;
                     spotLight.penumbra = 0.2;
                     spotLight.decay = 1;
-                    spotLight.distance = 15;
+                    spotLight.distance = 20;
                     spotLight.castShadow = true;
                     spotLight.shadow.mapSize.width = 1024;
                     spotLight.shadow.mapSize.height = 1024;
@@ -394,7 +419,7 @@
                     bulbGroup.add(lightBeam);
                     
                     // 创建地面
-                    const floorGeometry = new THREE.PlaneGeometry(20, 20);
+                    const floorGeometry = new THREE.PlaneGeometry(30, 30);
                     const floorMaterial = new THREE.MeshStandardMaterial({ 
                         color: 0x222222,
                         roughness: 0.8,
@@ -402,20 +427,22 @@
                     });
                     const floor = new THREE.Mesh(floorGeometry, floorMaterial);
                     floor.rotation.x = -Math.PI / 2;
-                    floor.position.y = -2.5;
+                    floor.position.y = -3;
                     floor.receiveShadow = true;
                     scene.add(floor);
                     
                     // 添加一些物体来展示光照效果
                     const cubeGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
                     const sphereGeometry = new THREE.SphereGeometry(0.3, 32, 32);
+                    const cylinderGeometry = new THREE.CylinderGeometry(0.3, 0.3, 1, 32);
                     const cubeMaterial = new THREE.MeshStandardMaterial({ color: 0x00aaff });
                     const sphereMaterial = new THREE.MeshStandardMaterial({ color: 0xff6b6b });
+                    const cylinderMaterial = new THREE.MeshStandardMaterial({ color: 0x66bb6a });
                     
                     // 添加立方体
                     for (let i = 0; i < 5; i++) {
                         const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
-                        cube.position.set(i - 2, -2.2, -3);
+                        cube.position.set(i - 2, -2.5, -4);
                         cube.castShadow = true;
                         cube.receiveShadow = true;
                         scene.add(cube);
@@ -424,10 +451,19 @@
                     // 添加球体
                     for (let i = 0; i < 4; i++) {
                         const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-                        sphere.position.set(i - 1.5, -2.2, -1);
+                        sphere.position.set(i - 1.5, -2.5, -2);
                         sphere.castShadow = true;
                         sphere.receiveShadow = true;
                         scene.add(sphere);
+                    }
+                    
+                    // 添加圆柱体
+                    for (let i = 0; i < 3; i++) {
+                        const cylinder = new THREE.Mesh(cylinderGeometry, cylinderMaterial);
+                        cylinder.position.set(i - 1, -2, 0);
+                        cylinder.castShadow = true;
+                        cylinder.receiveShadow = true;
+                        scene.add(cylinder);
                     }
                     
                     // 添加动画
@@ -460,7 +496,10 @@
                     }
                     
                     // 更新光束效果
-                    updateLightBeam();
+                    if (beamCone && spotLight) {
+                        const scale = Math.tan(spotLight.angle) * beamLength.value;
+                        beamCone.scale.set(scale, 1, scale);
+                    }
                     
                     if (renderer && scene && camera) {
                         renderer.render(scene, camera);
@@ -474,24 +513,28 @@
                             lightAngle.value = 50;
                             lightIntensity.value = 1.0;
                             beamIntensity.value = 0.4;
+                            beamLength.value = 4;
                             showBeam.value = true;
                             break;
                         case 'bright':
                             lightAngle.value = 30;
                             lightIntensity.value = 2.5;
                             beamIntensity.value = 0.7;
+                            beamLength.value = 6;
                             showBeam.value = true;
                             break;
                         case 'spot':
                             lightAngle.value = 20;
                             lightIntensity.value = 2.0;
                             beamIntensity.value = 1.2;
+                            beamLength.value = 8;
                             showBeam.value = true;
                             break;
                         case 'disco':
                             lightAngle.value = 45;
                             lightIntensity.value = 2.0;
                             beamIntensity.value = 1.5;
+                            beamLength.value = 7;
                             rotationSpeed.value = 0.008;
                             showBeam.value = true;
                             break;
@@ -514,8 +557,18 @@
                     }
                 });
                 
-                watch(beamIntensity, updateLightBeam);
-                watch(showBeam, updateLightBeam);
+                watch(beamIntensity, () => {
+                    if (beamCone) {
+                        beamCone.material.opacity = beamIntensity.value * 0.6;
+                    }
+                });
+                
+                watch(beamLength, updateLightBeam);
+                watch(showBeam, () => {
+                    if (beamCone) {
+                        beamCone.visible = showBeam.value;
+                    }
+                });
                 
                 // 初始化
                 onMounted(() => {
@@ -526,6 +579,7 @@
                     lightAngle,
                     lightIntensity,
                     beamIntensity,
+                    beamLength,
                     rotationSpeed,
                     showBeam,
                     setPreset
