@@ -1,51 +1,122 @@
-const glowVertexShader = `
-    varying vec2 vUv;
-    void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-`;
-
-const glowFragmentShader = `
-    uniform vec3 glowColor;
-    uniform float glowIntensity;
-    uniform float glowRadius;
-    varying vec2 vUv;
-    
-    void main() {
-        // 计算到圆心的距离
-        float distance = length(vUv - vec2(0.5, 0.5));
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>斜向斑马条纹背景</title>
+    <style>
+        .container {
+            width: 100%;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+        }
         
-        // 边缘光晕效果
-        float glow = smoothstep(0.5 - glowRadius, 0.5, distance);
+        .zebra-box {
+            width: 100%;
+            height: 300px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            position: relative;
+            overflow: hidden;
+        }
         
-        // 基础颜色
-        vec4 baseColor = vec4(1.0, 1.0, 1.0, 1.0);
+        /* 方法1: 使用重复线性渐变 */
+        .method-1 {
+            background: repeating-linear-gradient(
+                45deg,
+                #f0f0f0,
+                #f0f0f0 10px,
+                #e0e0e0 10px,
+                #e0e0e0 20px
+            );
+        }
         
-        // 混合光晕颜色
-        vec4 finalColor = mix(baseColor, vec4(glowColor, 1.0), glow * glowIntensity);
+        /* 方法2: 使用多个渐变组合 */
+        .method-2 {
+            background: 
+                linear-gradient(45deg, rgba(0,0,0,0.1) 25%, transparent 25%, transparent 50%, 
+                rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1) 75%, transparent 75%, transparent);
+            background-size: 20px 20px;
+        }
         
-        gl_FragColor = finalColor;
-    }
-`;
-
-// 创建带光晕的材质
-const glowMaterial = new THREE.ShaderMaterial({
-    uniforms: {
-        glowColor: { value: new THREE.Color(0x0000ff) },
-        glowIntensity: { value: 0.0 }, // 初始强度为0
-        glowRadius: { value: 0.1 }
-    },
-    vertexShader: glowVertexShader,
-    fragmentShader: glowFragmentShader
-});
-
-const disk = new THREE.Mesh(geometry, glowMaterial);
-scene.add(disk);
-
-// 切换光晕效果
-function toggleGlow() {
-    isGlowing = !isGlowing;
-    glowMaterial.uniforms.glowIntensity.value = isGlowing ? 1.0 : 0.0;
-    glowMaterial.needsUpdate = true;
-}
+        /* 方法3: 使用伪元素创建斜条纹 */
+        .method-3 {
+            background-color: #f0f0f0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .method-3::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 10px,
+                rgba(0,0,0,0.05) 10px,
+                rgba(0,0,0,0.05) 20px
+            );
+            z-index: 1;
+        }
+        
+        .content {
+            position: relative;
+            z-index: 2;
+            padding: 20px;
+            color: #333;
+            font-family: Arial, sans-serif;
+        }
+        
+        h2 {
+            color: #2c3e50;
+        }
+        
+        .method-label {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            z-index: 3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>斜向斑马条纹背景实现方法</h1>
+        
+        <div class="zebra-box method-1">
+            <div class="method-label">方法1: repeating-linear-gradient</div>
+            <div class="content">
+                <h2>重复线性渐变实现</h2>
+                <p>使用CSS的repeating-linear-gradient属性创建斜向斑马条纹。</p>
+            </div>
+        </div>
+        
+        <div class="zebra-box method-2">
+            <div class="method-label">方法2: linear-gradient + background-size</div>
+            <div class="content">
+                <h2>线性渐变配合背景尺寸</h2>
+                <p>使用linear-gradient创建图案，然后通过background-size控制重复。</p>
+            </div>
+        </div>
+        
+        <div class="zebra-box method-3">
+            <div class="method-label">方法3: 伪元素叠加</div>
+            <div class="content">
+                <h2>使用伪元素创建条纹</h2>
+                <p>在伪元素上应用条纹背景，实现内容与背景的分离。</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
