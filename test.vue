@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>圆柱体透明度渐变效果优化</title>
+    <title>圆柱体透明度渐变效果 - 完全修复版</title>
     <style>
         body { 
             margin: 0; 
@@ -29,6 +29,7 @@
         h1 { 
             font-size: 18px; 
             margin-top: 0;
+            color: #2ecc71;
         }
         .controls {
             margin-top: 15px;
@@ -60,13 +61,18 @@
         button.active {
             background: #2ecc71;
         }
+        .explanation {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #ddd;
+        }
     </style>
 </head>
 <body>
     <div id="container"></div>
     <div id="info">
-        <h1>圆柱体侧面透明度渐变效果优化</h1>
-        <p>解决了侧面交界处的明暗不一致问题</p>
+        <h1>圆柱体透明度渐变效果 - 完全修复版</h1>
+        <p>使用无光照着色器彻底解决明暗交界问题</p>
         
         <div class="controls">
             <div class="slider-container">
@@ -85,9 +91,14 @@
             </div>
             
             <div class="mode-buttons">
-                <button id="mode1" class="active">渐变模式1</button>
-                <button id="mode2">渐变模式2</button>
+                <button id="mode1" class="active">顶部透明</button>
+                <button id="mode2">底部透明</button>
+                <button id="mode3">双向渐变</button>
             </div>
+        </div>
+
+        <div class="explanation">
+            <p>修复方案：使用无光照着色器，仅基于UV坐标计算渐变，彻底避免法线导致的明暗问题。</p>
         </div>
     </div>
 
@@ -101,46 +112,24 @@
         renderer.setClearColor(0x000000, 0);
         document.getElementById('container').appendChild(renderer.domElement);
 
-        // 添加灯光
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.8);
-        scene.add(ambientLight);
-        
-        const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.6);
-        directionalLight1.position.set(1, 1, 1);
-        scene.add(directionalLight1);
-        
-        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
-        directionalLight2.position.set(-1, -1, -1);
-        scene.add(directionalLight2);
-
-        // 顶点着色器 - 传递位置和法线信息
+        // 顶点着色器 - 只传递UV坐标
         const vertexShader = `
-            varying vec3 vNormal;
-            varying vec3 vPosition;
             varying vec2 vUv;
             
             void main() {
-                vNormal = normalize(normalMatrix * normal);
-                vPosition = position;
                 vUv = uv;
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
             }
         `;
 
-        // 片元着色器 - 模式1：基于法线的平滑渐变
+        // 片元着色器 - 模式1：顶部透明，底部不透明
         const fragmentShader1 = `
             uniform vec3 color;
-            varying vec3 vNormal;
-            varying vec3 vPosition;
             varying vec2 vUv;
             
             void main() {
-                // 使用法线的y分量和UV的y值结合创建平滑渐变
-                float normalFactor = abs(vNormal.y);
-                float alpha = 1.0 - smoothstep(0.0, 1.0, vUv.y);
-                
-                // 结合法线因子和UV渐变
-                alpha = mix(alpha, alpha * (1.0 - normalFactor * 0.5), 0.3);
+                // 基于UV的y坐标创建渐变 - 顶部透明，底部不透明
+                float alpha = vUv.y;
                 
                 // 添加一些微妙的颜色变化
                 vec3 finalColor = color;
@@ -151,22 +140,37 @@
             }
         `;
 
-        // 片元着色器 - 模式2：基于位置的渐变
+        // 片元着色器 - 模式2：底部透明，顶部不透明
         const fragmentShader2 = `
             uniform vec3 color;
-            varying vec3 vNormal;
-            varying vec3 vPosition;
             varying vec2 vUv;
             
             void main() {
-                // 基于位置的高度计算渐变
-                float height = (vPosition.y + 5.0) / 10.0; // 归一化到0-1范围
-                float alpha = 1.0 - smoothstep(0.0, 1.0, height);
+                // 基于UV的y坐标创建渐变 - 底部透明，顶部不透明
+                float alpha = 1.0 - vUv.y;
                 
                 // 添加一些微妙的颜色变化
                 vec3 finalColor = color;
-                finalColor.r += 0.1 * (1.0 - height);
-                finalColor.g += 0.05 * height;
+                finalColor.r += 0.1 * vUv.y;
+                finalColor.g += 0.05 * (1.0 - vUv.y);
+                
+                gl_FragColor = vec4(finalColor, alpha);
+            }
+        `;
+
+        // 片元着色器 - 模式3：双向渐变（中间透明，两端不透明）
+        const fragmentShader3 = `
+            uniform vec3 color;
+            varying vec2 vUv;
+            
+            void main() {
+                // 双向渐变 - 中间透明，两端不透明
+                float alpha = 1.0 - 2.0 * abs(vUv.y - 0.5);
+                
+                // 添加一些微妙的颜色变化
+                vec3 finalColor = color;
+                finalColor.r += 0.1 * (1.0 - vUv.y);
+                finalColor.g += 0.05 * vUv.y;
                 
                 gl_FragColor = vec4(finalColor, alpha);
             }
@@ -179,9 +183,9 @@
         let currentShader = 1;
         
         // 创建圆柱体几何体
-        const geometry = new THREE.CylinderGeometry(topRadius, bottomRadius, height, 32, 32, true);
+        const geometry = new THREE.CylinderGeometry(topRadius, bottomRadius, height, 64, 32, true);
         
-        // 创建材质
+        // 创建材质 - 使用无光照的着色器
         const material = new THREE.ShaderMaterial({
             uniforms: {
                 color: { value: new THREE.Color(0.2, 0.5, 0.8) }
@@ -196,9 +200,12 @@
         const cylinder = new THREE.Mesh(geometry, material);
         scene.add(cylinder);
 
-        // 添加参考网格
+        // 添加参考网格和坐标轴
         const gridHelper = new THREE.GridHelper(30, 30, 0x444444, 0x222222);
         scene.add(gridHelper);
+        
+        const axesHelper = new THREE.AxesHelper(10);
+        scene.add(axesHelper);
 
         // 设置相机位置
         camera.position.set(20, 15, 20);
@@ -256,18 +263,29 @@
             updateButtonStates();
         });
 
+        document.getElementById('mode3').addEventListener('click', () => {
+            currentShader = 3;
+            material.fragmentShader = fragmentShader3;
+            material.needsUpdate = true;
+            updateButtonStates();
+        });
+
         function updateButtonStates() {
             document.getElementById('mode1').classList.toggle('active', currentShader === 1);
             document.getElementById('mode2').classList.toggle('active', currentShader === 2);
+            document.getElementById('mode3').classList.toggle('active', currentShader === 3);
         }
 
         function updateGeometry() {
             const newGeometry = new THREE.CylinderGeometry(
-                topRadius, bottomRadius, height, 32, 32, true
+                topRadius, bottomRadius, height, 64, 32, true
             );
             cylinder.geometry.dispose();
             cylinder.geometry = newGeometry;
         }
+
+        // 初始按钮状态
+        updateButtonStates();
     </script>
 </body>
 </html>
