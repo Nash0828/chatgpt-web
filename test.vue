@@ -3,525 +3,547 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js 力导向拓扑图</title>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <title>节点连通性检测</title>
     <style>
         * {
+            box-sizing: border-box;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
         }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            overflow: hidden;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: #e6e6e6;
-        }
-        #container {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-        }
-        #ui {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            width: 300px;
-            background: rgba(26, 26, 46, 0.8);
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
             padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(10px);
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+        }
+        header {
+            grid-column: 1 / -1;
+            text-align: center;
+            margin-bottom: 20px;
         }
         h1 {
-            font-size: 1.5rem;
-            margin-bottom: 15px;
-            color: #4cc9f0;
-            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 10px;
         }
-        .control-group {
+        .description {
+            color: #7f8c8d;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .control-panel {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .visualization {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+        .form-group {
             margin-bottom: 15px;
         }
         label {
             display: block;
             margin-bottom: 5px;
             font-weight: 500;
+            color: #2c3e50;
         }
-        input[type="range"] {
+        select, button {
             width: 100%;
-            height: 5px;
-            -webkit-appearance: none;
-            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border: 1px solid #ddd;
             border-radius: 5px;
-            outline: none;
+            font-size: 16px;
         }
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #2980b9;
+        }
+        #canvas {
+            width: 100%;
+            height: 400px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .result h3 {
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+        .path {
+            margin: 5px 0;
+            padding: 8px;
+            background: #e8f4fc;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .node {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #3498db;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            cursor: move;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s, background 0.3s;
+        }
+        .node:hover {
+            transform: scale(1.05);
+        }
+        .node.start {
+            background: #2ecc71;
+        }
+        .node.end {
+            background: #e74c3c;
+        }
+        .node.highlight {
+            background: #f1c40f;
+        }
+        .edge {
+            position: absolute;
+            background: #7f8c8d;
+            transform-origin: 0 0;
+            z-index: -1;
+        }
+        .edge.highlight {
+            background: #f1c40f;
+            height: 4px;
+            z-index: 1;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .legend-color {
             width: 15px;
             height: 15px;
             border-radius: 50%;
-            background: #4cc9f0;
-            cursor: pointer;
         }
-        .value-display {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.8rem;
-            color: #a0a0a0;
-        }
-        button {
-            width: 100%;
-            padding: 10px;
-            background: #4361ee;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: background 0.3s;
-        }
-        button:hover {
-            background: #3a56d4;
-        }
-        .instructions {
-            margin-top: 15px;
-            font-size: 0.85rem;
-            color: #a0a0a0;
-            line-height: 1.4;
-        }
-        #status {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            background: rgba(26, 26, 46, 0.8);
-            padding: 10px 15px;
-            border-radius: 5px;
-            font-size: 0.9rem;
-            backdrop-filter: blur(10px);
+        .legend-line {
+            width: 20px;
+            height: 3px;
+            margin: 0 5px;
         }
     </style>
 </head>
 <body>
-    <div id="container"></div>
-    
-    <div id="ui">
-        <h1>拓扑图力导向布局</h1>
-        
-        <div class="control-group">
-            <label for="repulsion">节点斥力</label>
-            <input type="range" id="repulsion" min="1" max="100" value="30">
-            <div class="value-display">
-                <span>弱</span>
-                <span>强</span>
+    <div class="container">
+        <header>
+            <h1>节点连通性检测与路径查找</h1>
+            <p class="description">此工具可帮助您可视化节点拓扑关系，检测两个节点之间的连通性，并查找所有可能的路径。</p>
+        </header>
+
+        <div class="control-panel">
+            <h2>控制面板</h2>
+            <div class="form-group">
+                <label for="start-node">起始节点:</label>
+                <select id="start-node">
+                    <option value="">-- 选择起始节点 --</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="end-node">目标节点:</label>
+                <select id="end-node">
+                    <option value="">-- 选择目标节点 --</option>
+                </select>
+            </div>
+            <button id="check-btn">检测连通性</button>
+            <button id="reset-btn">重置视图</button>
+
+            <div class="result">
+                <h3>检测结果:</h3>
+                <div id="result-content">请选择起始节点和目标节点后点击检测按钮</div>
+            </div>
+
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #2ecc71;"></div>
+                    <span>起始节点</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #e74c3c;"></div>
+                    <span>目标节点</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f1c40f;"></div>
+                    <span>路径高亮</span>
+                </div>
             </div>
         </div>
-        
-        <div class="control-group">
-            <label for="attraction">连接引力</label>
-            <input type="range" id="attraction" min="1" max="100" value="20">
-            <div class="value-display">
-                <span>弱</span>
-                <span>强</span>
-            </div>
-        </div>
-        
-        <div class="control-group">
-            <label for="velocity">速度阻尼</label>
-            <input type="range" id="velocity" min="1" max="100" value="85">
-            <div class="value-display">
-                <span>快</span>
-                <span>慢</span>
-            </div>
-        </div>
-        
-        <button id="reset">重置布局</button>
-        
-        <div class="instructions">
-            <p>• 鼠标拖动：旋转视图</p>
-            <p>• 鼠标滚轮：缩放视图</p>
-            <p>• 拖动节点：手动调整位置</p>
+
+        <div class="visualization">
+            <h2>拓扑可视化</h2>
+            <div id="canvas"></div>
         </div>
     </div>
-    
-    <div id="status">布局稳定性: 计算中...</div>
 
     <script>
-        // 主要变量
-        let scene, camera, renderer;
-        let nodes = [], edges = [];
-        let nodeMeshes = [], edgeMeshes = [];
-        let selectedNode = null;
-        
-        // 力导向参数
-        let params = {
-            repulsion: 30,
-            attraction: 20,
-            damping: 0.85
-        };
-        
-        // 初始化场景
-        function init() {
-            // 创建场景
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x0f172a);
+        // 示例数据
+        const nodeList = [
+            { id: 1, name: "节点A", x: 100, y: 100 },
+            { id: 2, name: "节点B", x: 250, y: 150 },
+            { id: 3, name: "节点C", x: 150, y: 250 },
+            { id: 4, name: "节点D", x: 300, y: 300 },
+            { id: 5, name: "节点E", x: 400, y: 200 },
+            { id: 6, name: "节点F", x: 500, y: 100 },
+            { id: 7, name: "节点G", x: 600, y: 300 }
+        ];
+
+        const edgeList = [
+            { id: 1, from: 1, to: 2 },
+            { id: 2, from: 1, to: 3 },
+            { id: 3, from: 2, to: 4 },
+            { id: 4, from: 3, to: 4 },
+            { id: 5, from: 4, to: 5 },
+            { id: 6, from: 5, to: 6 },
+            { id: 7, from: 5, to: 7 },
+            { id: 8, from: 6, to: 7 }
+        ];
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initNodeDropdowns();
+            renderGraph();
+            initEventListeners();
+        });
+
+        // 初始化节点下拉框
+        function initNodeDropdowns() {
+            const startNodeSelect = document.getElementById('start-node');
+            const endNodeSelect = document.getElementById('end-node');
             
-            // 创建相机
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.z = 50;
-            
-            // 创建渲染器
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.getElementById('container').appendChild(renderer.domElement);
-            
-            // 添加光源
-            const ambientLight = new THREE.AmbientLight(0x444444);
-            scene.add(ambientLight);
-            
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-            directionalLight.position.set(1, 1, 1).normalize();
-            scene.add(directionalLight);
-            
-            // 创建网格地面
-            const gridHelper = new THREE.GridHelper(40, 20, 0x3d348b, 0x3d348b);
-            gridHelper.rotation.x = Math.PI / 2;
-            scene.add(gridHelper);
-            
-            // 创建坐标轴
-            const axesHelper = new THREE.AxesHelper(10);
-            scene.add(axesHelper);
-            
-            // 生成随机拓扑图
-            generateGraph(15);
-            
-            // 添加事件监听器
-            setupEventListeners();
-            
-            // 开始动画循环
-            animate();
+            nodeList.forEach(node => {
+                const option1 = document.createElement('option');
+                option1.value = node.id;
+                option1.textContent = node.name;
+                
+                const option2 = option1.cloneNode(true);
+                
+                startNodeSelect.appendChild(option1);
+                endNodeSelect.appendChild(option2);
+            });
         }
-        
-        // 生成随机拓扑图
-        function generateGraph(nodeCount) {
-            // 清除现有节点和边
-            nodeMeshes.forEach(mesh => scene.remove(mesh));
-            edgeMeshes.forEach(mesh => scene.remove(mesh));
-            nodes = [];
-            edges = [];
-            nodeMeshes = [];
-            edgeMeshes = [];
+
+        // 渲染图
+        function renderGraph() {
+            const canvas = document.getElementById('canvas');
+            canvas.innerHTML = '';
             
-            // 创建节点
-            for (let i = 0; i < nodeCount; i++) {
-                const node = {
-                    id: i,
-                    x: Math.random() * 30 - 15,
-                    y: Math.random() * 30 - 15,
-                    z: 0,
-                    vx: 0,
-                    vy: 0,
-                    vz: 0
-                };
-                nodes.push(node);
+            // 先绘制边
+            edgeList.forEach(edge => {
+                const fromNode = nodeList.find(n => n.id === edge.from);
+                const toNode = nodeList.find(n => n.id === edge.to);
                 
-                // 创建球体表示节点
-                const geometry = new THREE.SphereGeometry(0.8, 16, 16);
-                const material = new THREE.MeshPhongMaterial({ 
-                    color: new THREE.Color().setHSL(Math.random(), 0.8, 0.6),
-                    emissive: new THREE.Color().setHSL(Math.random(), 0.8, 0.1)
-                });
-                const sphere = new THREE.Mesh(geometry, material);
-                sphere.position.set(node.x, node.y, node.z);
-                sphere.userData.node = node;
-                scene.add(sphere);
-                nodeMeshes.push(sphere);
-            }
-            
-            // 创建连接（边）
-            for (let i = 0; i < nodeCount; i++) {
-                // 每个节点随机连接1-3个其他节点
-                const connections = Math.floor(Math.random() * 3) + 1;
-                for (let j = 0; j < connections; j++) {
-                    const target = Math.floor(Math.random() * nodeCount);
-                    if (target !== i && !edges.find(e => 
-                        (e.source === i && e.target === target) || 
-                        (e.source === target && e.target === i))) {
-                        edges.push({ source: i, target: target });
-                        
-                        // 创建圆柱体表示边
-                        const sourceNode = nodes[i];
-                        const targetNode = nodes[target];
-                        
-                        const geometry = new THREE.CylinderGeometry(0.2, 0.2, 1, 8);
-                        geometry.translate(0, 0.5, 0);
-                        geometry.rotateX(Math.PI / 2);
-                        
-                        const material = new THREE.MeshPhongMaterial({ 
-                            color: 0x4361ee,
-                            transparent: true,
-                            opacity: 0.6
-                        });
-                        
-                        const cylinder = new THREE.Mesh(geometry, material);
-                        updateEdgePosition(cylinder, sourceNode, targetNode);
-                        scene.add(cylinder);
-                        edgeMeshes.push(cylinder);
-                    }
+                if (fromNode && toNode) {
+                    const edgeElement = document.createElement('div');
+                    edgeElement.className = 'edge';
+                    edgeElement.id = `edge-${edge.id}`;
+                    
+                    const length = Math.sqrt(Math.pow(toNode.x - fromNode.x, 2) + Math.pow(toNode.y - fromNode.y, 2));
+                    const angle = Math.atan2(toNode.y - fromNode.y, toNode.x - fromNode.x) * 180 / Math.PI;
+                    
+                    edgeElement.style.width = `${length}px`;
+                    edgeElement.style.height = '2px';
+                    edgeElement.style.left = `${fromNode.x}px`;
+                    edgeElement.style.top = `${fromNode.y}px`;
+                    edgeElement.style.transform = `rotate(${angle}deg)`;
+                    
+                    canvas.appendChild(edgeElement);
                 }
-            }
+            });
+            
+            // 再绘制节点（确保节点在顶部）
+            nodeList.forEach(node => {
+                const nodeElement = document.createElement('div');
+                nodeElement.className = 'node';
+                nodeElement.id = `node-${node.id}`;
+                nodeElement.style.left = `${node.x - 25}px`;
+                nodeElement.style.top = `${node.y - 25}px`;
+                nodeElement.textContent = node.name;
+                
+                // 添加拖拽功能
+                makeDraggable(nodeElement, node);
+                
+                canvas.appendChild(nodeElement);
+            });
         }
-        
-        // 更新边的位置
-        function updateEdgePosition(cylinder, source, target) {
-            // 计算中点
-            cylinder.position.set(
-                (source.x + target.x) / 2,
-                (source.y + target.y) / 2,
-                (source.z + target.z) / 2
-            );
-            
-            // 计算方向
-            const dir = new THREE.Vector3(
-                target.x - source.x,
-                target.y - source.y,
-                target.z - source.z
-            );
-            
-            // 计算长度
-            const length = dir.length();
-            cylinder.scale.y = length;
-            
-            // 计算旋转
-            cylinder.rotation.z = Math.atan2(dir.y, dir.x);
-            cylinder.rotation.y = -Math.atan2(dir.z, Math.sqrt(dir.x * dir.x + dir.y * dir.y));
-        }
-        
-        // 力导向布局算法
-        function forceDirectedLayout() {
-            // 计算节点间的斥力
-            for (let i = 0; i < nodes.length; i++) {
-                for (let j = i + 1; j < nodes.length; j++) {
-                    const node1 = nodes[i];
-                    const node2 = nodes[j];
-                    
-                    const dx = node1.x - node2.x;
-                    const dy = node1.y - node2.y;
-                    const dz = node1.z - node2.z;
-                    
-                    const distance = Math.max(0.1, Math.sqrt(dx * dx + dy * dy + dz * dz));
-                    
-                    // 库仑斥力
-                    const force = params.repulsion / (distance * distance);
-                    
-                    const fx = force * dx / distance;
-                    const fy = force * dy / distance;
-                    const fz = force * dz / distance;
-                    
-                    if (!node1.fixed) {
-                        node1.vx += fx;
-                        node1.vy += fy;
-                        node1.vz += fz;
-                    }
-                    
-                    if (!node2.fixed) {
-                        node2.vx -= fx;
-                        node2.vy -= fy;
-                        node2.vz -= fz;
-                    }
-                }
-            }
-            
-            // 计算边的引力
-            for (const edge of edges) {
-                const source = nodes[edge.source];
-                const target = nodes[edge.target];
-                
-                const dx = source.x - target.x;
-                const dy = source.y - target.y;
-                const dz = source.z - target.z;
-                
-                const distance = Math.max(0.1, Math.sqrt(dx * dx + dy * dy + dz * dz));
-                
-                // 胡克定律引力
-                const force = params.attraction * Math.log(distance / 5);
-                
-                const fx = force * dx / distance;
-                const fy = force * dy / distance;
-                const fz = force * dz / distance;
-                
-                if (!source.fixed) {
-                    source.vx -= fx;
-                    source.vy -= fy;
-                    source.vz -= fz;
-                }
-                
-                if (!target.fixed) {
-                    target.vx += fx;
-                    target.vy += fy;
-                    target.vz += fz;
-                }
-            }
-            
-            // 应用速度并限制在边界内
-            let totalMovement = 0;
-            for (const node of nodes) {
-                if (node.fixed) continue;
-                
-                // 应用阻尼
-                node.vx *= params.damping;
-                node.vy *= params.damping;
-                node.vz *= params.damping;
-                
-                // 更新位置
-                node.x += node.vx * 0.1;
-                node.y += node.vy * 0.1;
-                node.z += node.vz * 0.1;
-                
-                // 限制在边界内
-                const boundary = 20;
-                node.x = Math.max(-boundary, Math.min(boundary, node.x));
-                node.y = Math.max(-boundary, Math.min(boundary, node.y));
-                node.z = Math.max(-boundary, Math.min(boundary, node.z));
-                
-                // 计算总移动距离（用于稳定性检测）
-                totalMovement += Math.abs(node.vx) + Math.abs(node.vy) + Math.abs(node.vz);
-            }
-            
-            // 更新状态显示
-            const stability = Math.max(0, 100 - totalMovement).toFixed(1);
-            document.getElementById('status').textContent = `布局稳定性: ${stability}%`;
-            
-            // 更新Three.js对象位置
-            for (let i = 0; i < nodes.length; i++) {
-                const node = nodes[i];
-                const mesh = nodeMeshes[i];
-                mesh.position.set(node.x, node.y, node.z);
-            }
-            
-            // 更新边的位置
-            for (let i = 0; i < edges.length; i++) {
-                const edge = edges[i];
-                const source = nodes[edge.source];
-                const target = nodes[edge.target];
-                updateEdgePosition(edgeMeshes[i], source, target);
-            }
-        }
-        
-        // 设置事件监听器
-        function setupEventListeners() {
-            // 鼠标拖动旋转场景
+
+        // 使节点可拖拽
+        function makeDraggable(element, nodeData) {
             let isDragging = false;
-            let previousMousePosition = {
-                x: 0,
-                y: 0
-            };
+            let offsetX, offsetY;
             
-            renderer.domElement.addEventListener('mousedown', (e) => {
+            element.addEventListener('mousedown', function(e) {
                 isDragging = true;
-                
-                // 检查是否点击了节点
-                const mouse = new THREE.Vector2(
-                    (e.clientX / window.innerWidth) * 2 - 1,
-                    -(e.clientY / window.innerHeight) * 2 + 1
-                );
-                
-                const raycaster = new THREE.Raycaster();
-                raycaster.setFromCamera(mouse, camera);
-                
-                const intersects = raycaster.intersectObjects(nodeMeshes);
-                if (intersects.length > 0) {
-                    selectedNode = intersects[0].object.userData.node;
-                    selectedNode.fixed = true;
+                offsetX = e.clientX - element.getBoundingClientRect().left;
+                offsetY = e.clientY - element.getBoundingClientRect().top;
+                element.style.cursor = 'grabbing';
+            });
+            
+            document.addEventListener('mousemove', function(e) {
+                if (isDragging) {
+                    const canvas = document.getElementById('canvas');
+                    const canvasRect = canvas.getBoundingClientRect();
+                    
+                    let x = e.clientX - canvasRect.left - offsetX;
+                    let y = e.clientY - canvasRect.top - offsetY;
+                    
+                    // 限制在画布内
+                    x = Math.max(0, Math.min(canvasRect.width - 50, x));
+                    y = Math.max(0, Math.min(canvasRect.height - 50, y));
+                    
+                    element.style.left = `${x}px`;
+                    element.style.top = `${y}px`;
+                    
+                    // 更新节点数据
+                    nodeData.x = x + 25;
+                    nodeData.y = y + 25;
+                    
+                    // 更新边
+                    updateEdges(nodeData.id);
                 }
             });
             
-            renderer.domElement.addEventListener('mousemove', (e) => {
-                const deltaMove = {
-                    x: e.offsetX - previousMousePosition.x,
-                    y: e.offsetY - previousMousePosition.y
-                };
+            document.addEventListener('mouseup', function() {
+                isDragging = false;
+                element.style.cursor = 'grab';
+            });
+        }
+
+        // 更新边
+        function updateEdges(nodeId) {
+            const node = nodeList.find(n => n.id === nodeId);
+            if (!node) return;
+            
+            // 找到所有与该节点相连的边
+            const connectedEdges = edgeList.filter(edge => 
+                edge.from === nodeId || edge.to === nodeId
+            );
+            
+            connectedEdges.forEach(edge => {
+                const fromNode = nodeList.find(n => n.id === edge.from);
+                const toNode = nodeList.find(n => n.id === edge.to);
                 
-                if (isDragging) {
-                    if (selectedNode) {
-                        // 拖动节点
-                        const mouse = new THREE.Vector2(
-                            (e.clientX / window.innerWidth) * 2 - 1,
-                            -(e.clientY / window.innerHeight) * 2 + 1
-                        );
-                        
-                        const raycaster = new THREE.Raycaster();
-                        raycaster.setFromCamera(mouse, camera);
-                        
-                        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-                        const intersection = new THREE.Vector3();
-                        raycaster.ray.intersectPlane(plane, intersection);
-                        
-                        selectedNode.x = intersection.x;
-                        selectedNode.y = intersection.y;
-                    } else {
-                        // 旋转场景
-                        camera.position.x -= deltaMove.x * 0.01;
-                        camera.position.y += deltaMove.y * 0.01;
-                        camera.lookAt(scene.position);
+                if (fromNode && toNode) {
+                    const edgeElement = document.getElementById(`edge-${edge.id}`);
+                    
+                    const length = Math.sqrt(Math.pow(toNode.x - fromNode.x, 2) + Math.pow(toNode.y - fromNode.y, 2));
+                    const angle = Math.atan2(toNode.y - fromNode.y, toNode.x - fromNode.x) * 180 / Math.PI;
+                    
+                    edgeElement.style.width = `${length}px`;
+                    edgeElement.style.left = `${fromNode.x}px`;
+                    edgeElement.style.top = `${fromNode.y}px`;
+                    edgeElement.style.transform = `rotate(${angle}deg)`;
+                }
+            });
+        }
+
+        // 初始化事件监听器
+        function initEventListeners() {
+            document.getElementById('check-btn').addEventListener('click', checkConnectivity);
+            document.getElementById('reset-btn').addEventListener('click', resetView);
+        }
+
+        // 构建图结构
+        function buildGraph() {
+            const graph = {};
+            nodeList.forEach(node => {
+                graph[node.id] = [];
+            });
+            
+            edgeList.forEach(edge => {
+                graph[edge.from].push(edge.to);
+                graph[edge.to].push(edge.from); // 无向图，双向添加
+            });
+            
+            return graph;
+        }
+
+        // 检测连通性
+        function checkConnectivity() {
+            const startNodeId = parseInt(document.getElementById('start-node').value);
+            const endNodeId = parseInt(document.getElementById('end-node').value);
+            
+            if (!startNodeId || !endNodeId) {
+                alert('请选择起始节点和目标节点');
+                return;
+            }
+            
+            // 清除之前的高亮
+            clearHighlights();
+            
+            // 标记选中的节点
+            document.getElementById(`node-${startNodeId}`).classList.add('start');
+            document.getElementById(`node-${endNodeId}`).classList.add('end');
+            
+            const graph = buildGraph();
+            const paths = findAllPaths(graph, startNodeId, endNodeId);
+            
+            displayResult(paths, startNodeId, endNodeId);
+            highlightPaths(paths);
+        }
+
+        // 查找所有路径
+        function findAllPaths(graph, start, end) {
+            const paths = [];
+            const visited = new Set();
+            
+            function dfs(node, path) {
+                visited.add(node);
+                path.push(node);
+                
+                if (node === end) {
+                    paths.push([...path]);
+                } else {
+                    for (const neighbor of graph[node]) {
+                        if (!visited.has(neighbor)) {
+                            dfs(neighbor, path);
+                        }
                     }
                 }
                 
-                previousMousePosition = {
-                    x: e.offsetX,
-                    y: e.offsetY
-                };
-            });
+                path.pop();
+                visited.delete(node);
+            }
             
-            renderer.domElement.addEventListener('mouseup', () => {
-                isDragging = false;
-                if (selectedNode) {
-                    selectedNode.fixed = false;
-                    selectedNode = null;
+            dfs(start, []);
+            return paths;
+        }
+
+        // 显示结果
+        function displayResult(paths, startNodeId, endNodeId) {
+            const resultDiv = document.getElementById('result-content');
+            
+            if (paths.length === 0) {
+                resultDiv.innerHTML = `<p>节点 ${getNodeName(startNodeId)} 和节点 ${getNodeName(endNodeId)} 之间没有连通路径。</p>`;
+                return;
+            }
+            
+            resultDiv.innerHTML = `
+                <p>找到 ${paths.length} 条从 ${getNodeName(startNodeId)} 到 ${getNodeName(endNodeId)} 的路径:</p>
+            `;
+            
+            paths.forEach((path, index) => {
+                const pathNodes = path.map(id => getNodeName(id)).join(' → ');
+                resultDiv.innerHTML += `
+                    <div class="path">路径 ${index + 1}: ${pathNodes}</div>
+                `;
+            });
+        }
+
+        // 高亮显示路径
+        function highlightPaths(paths) {
+            paths.forEach(path => {
+                // 高亮节点
+                path.forEach(nodeId => {
+                    const nodeElement = document.getElementById(`node-${nodeId}`);
+                    if (nodeElement) {
+                        nodeElement.classList.add('highlight');
+                    }
+                });
+                
+                // 高亮边
+                for (let i = 0; i < path.length - 1; i++) {
+                    const fromId = path[i];
+                    const toId = path[i + 1];
+                    
+                    // 查找边
+                    const edge = edgeList.find(e => 
+                        (e.from === fromId && e.to === toId) || 
+                        (e.from === toId && e.to === fromId)
+                    );
+                    
+                    if (edge) {
+                        const edgeElement = document.getElementById(`edge-${edge.id}`);
+                        if (edgeElement) {
+                            edgeElement.classList.add('highlight');
+                        }
+                    }
                 }
             });
-            
-            // 鼠标滚轮缩放
-            renderer.domElement.addEventListener('wheel', (e) => {
-                camera.position.z += e.deltaY * 0.05;
-                camera.position.z = Math.max(10, Math.min(100, camera.position.z));
+        }
+
+        // 清除高亮
+        function clearHighlights() {
+            // 清除节点高亮
+            document.querySelectorAll('.node').forEach(node => {
+                node.classList.remove('start', 'end', 'highlight');
             });
             
-            // 窗口大小调整
-            window.addEventListener('resize', () => {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            });
-            
-            // 参数控制
-            document.getElementById('repulsion').addEventListener('input', (e) => {
-                params.repulsion = parseInt(e.target.value);
-            });
-            
-            document.getElementById('attraction').addEventListener('input', (e) => {
-                params.attraction = parseInt(e.target.value) / 10;
-            });
-            
-            document.getElementById('velocity').addEventListener('input', (e) => {
-                params.damping = parseInt(e.target.value) / 100;
-            });
-            
-            document.getElementById('reset').addEventListener('click', () => {
-                generateGraph(15);
+            // 清除边高亮
+            document.querySelectorAll('.edge').forEach(edge => {
+                edge.classList.remove('highlight');
             });
         }
-        
-        // 动画循环
-        function animate() {
-            requestAnimationFrame(animate);
+
+        // 重置视图
+        function resetView() {
+            // 重置节点位置
+            nodeList[0].x = 100; nodeList[0].y = 100;
+            nodeList[1].x = 250; nodeList[1].y = 150;
+            nodeList[2].x = 150; nodeList[2].y = 250;
+            nodeList[3].x = 300; nodeList[3].y = 300;
+            nodeList[4].x = 400; nodeList[4].y = 200;
+            nodeList[5].x = 500; nodeList[5].y = 100;
+            nodeList[6].x = 600; nodeList[6].y = 300;
             
-            forceDirectedLayout();
+            // 重置下拉选择
+            document.getElementById('start-node').value = '';
+            document.getElementById('end-node').value = '';
             
-            renderer.render(scene, camera);
+            // 清除结果
+            document.getElementById('result-content').textContent = '请选择起始节点和目标节点后点击检测按钮';
+            
+            // 清除高亮并重新渲染
+            clearHighlights();
+            renderGraph();
         }
-        
-        // 启动应用
-        init();
+
+        // 根据ID获取节点名称
+        function getNodeName(nodeId) {
+            const node = nodeList.find(n => n.id === nodeId);
+            return node ? node.name : `节点${nodeId}`;
+        }
     </script>
 </body>
 </html>
