@@ -1,31 +1,78 @@
-// 修正后的DFS实现
-function dfs(currentNodeId, currentPath, visited) {
-  const currentNode = graph.nodes.find(node => node.id === currentNodeId);
+// composables/useWebSocketWithReconnect.js
+import { ref, onUnmounted } from 'vue'
+
+export function useWebSocketWithReconnect(url, options = {}) {
+  const {
+    reconnectAttempts = 5,
+    reconnectInterval = 3000
+  } = options
   
-  // 将当前节点加入路径
-  currentPath.push(currentNode);
+  const ws = ref(null)
+  const message = ref('')
+  const status = ref('closed')
+  const reconnectCount = ref(0)
+  let reconnectTimer = null
   
-  // 检查当前节点的邻居（子节点）
-  const neighbors = adjacencyList[currentNodeId] || [];
-  
-  // 如果没有邻居，或者当前节点不是serviceInstance，记录路径
-  if (neighbors.length === 0 || currentNode.nodeType !== 'serviceInstance') {
-    allPaths.push([...currentPath]); // 记录当前路径
-    currentPath.pop(); // 回溯
-    return;
-  }
-  
-  // 标记为已访问
-  visited.add(currentNodeId);
-  
-  // 继续遍历邻居节点（只有当前节点是serviceInstance时才继续）
-  for (const neighborId of neighbors) {
-    if (!visited.has(neighborId)) {
-      dfs(neighborId, currentPath, visited);
+  const connect = () => {
+    status.value = 'connecting'
+    ws.value = new WebSocket(url)
+    
+    ws.value.onopen = () => {
+      status.value = 'open'
+      reconnectCount.value = 0
+      console.log('WebSocket connected')
+    }
+    
+    ws.value.onmessage = (event) => {
+      message.value = event.data
+    }
+    
+    ws.value.onerror = (error) => {
+      status.value = 'error'
+      console.error('WebSocket error:', error)
+    }
+    
+    ws.value.onclose = (event) => {
+      status.value = 'closed'
+      
+      // 非正常关闭时尝试重连
+      if (event.code !== 1000 && reconnectCount.value < reconnectAttempts) {
+        reconnectTimer = setTimeout(() => {
+          reconnectCount.value++
+          console.log(`尝试重连 (${reconnectCount.value}/${reconnectAttempts})`)
+          connect()
+        }, reconnectInterval)
+      }
     }
   }
   
-  // 回溯
-  visited.delete(currentNodeId);
-  currentPath.pop();
+  const send = (data) => {
+    if (ws.value && ws.value.readyState === WebSocket.OPEN) {
+      ws.value.send(typeof data === 'string' ? data : JSON.stringify(data))
+      return true
+    }
+    return false
+  }
+  
+  const disconnect = () => {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+    }
+    if (ws.value) {
+      ws.value.close(1000, '正常关闭')
+    }
+  }
+  
+  onUnmounted(() => {
+    disconnect()
+  })
+  
+  return {
+    message,
+    status,
+    reconnectCount,
+    connect,
+    disconnect,
+    send
+  }
 }
