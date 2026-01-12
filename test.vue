@@ -1,84 +1,93 @@
 import * as THREE from 'three';
 
 class GradientGridHelper {
-  constructor(size, divisions, mainColor = 0x888888, centerColor = 0x444444) {
+  constructor(size, divisions, color = 0x888888, centerAlpha = 1.0, edgeAlpha = 0.1) {
     this.size = size;
     this.divisions = divisions;
     
     // 创建几何体
     const geometry = new THREE.BufferGeometry();
     const vertices = [];
-    const colors = [];
+    const alphas = [];
     
     const halfSize = size / 2;
     const step = size / divisions;
     
-    // 生成网格线顶点和颜色
+    // 生成网格线顶点
     for (let i = 0; i <= divisions; i++) {
-      // x方向线条（平行于y轴）
-      vertices.push(-halfSize, i * step - halfSize, 0);
-      vertices.push(halfSize, i * step - halfSize, 0);
+      const offset = i * step - halfSize;
       
-      // y方向线条（平行于x轴）
-      vertices.push(i * step - halfSize, -halfSize, 0);
-      vertices.push(i * step - halfSize, halfSize, 0);
+      // x方向的线（平行于y轴）
+      vertices.push(-halfSize, 0, offset);
+      vertices.push(halfSize, 0, offset);
+      
+      // y方向的线（平行于x轴） - 注意：网格在XZ平面上
+      vertices.push(offset, 0, -halfSize);
+      vertices.push(offset, 0, halfSize);
     }
     
-    // 设置顶点颜色用于渐变
-    const vertexCount = vertices.length / 3;
-    for (let i = 0; i < vertexCount; i++) {
-      // 获取顶点的y坐标（在Three.js中通常是z-up，但这里我们按y-up处理）
-      const y = vertices[i * 3 + 1];
-      // 根据y值计算渐变透明度
-      const normalizedY = Math.abs(y) / halfSize;
-      const alpha = 1.0 - normalizedY; // 中心最清晰，边缘最模糊
+    // 为每个顶点计算基于距离的透明度
+    for (let i = 0; i < vertices.length; i += 6) {
+      // 每条线有两个顶点
+      const x1 = vertices[i];
+      const z1 = vertices[i + 2];
+      const x2 = vertices[i + 3];
+      const z2 = vertices[i + 5];
       
-      // 设置颜色（这里使用RGBA格式）
-      colors.push(mainColor, alpha);
-      colors.push(mainColor, alpha);
-      colors.push(mainColor, alpha);
+      // 计算每个顶点的距离（从中心到顶点的距离）
+      const distance1 = Math.sqrt(x1 * x1 + z1 * z1);
+      const distance2 = Math.sqrt(x2 * x2 + z2 * z2);
+      
+      // 计算透明度（距离越大越透明）
+      const maxDistance = Math.sqrt(2 * halfSize * halfSize); // 对角线距离
+      const alpha1 = centerAlpha * (1 - distance1 / maxDistance) + edgeAlpha * (distance1 / maxDistance);
+      const alpha2 = centerAlpha * (1 - distance2 / maxDistance) + edgeAlpha * (distance2 / maxDistance);
+      
+      alphas.push(alpha1, alpha2);
     }
     
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+    geometry.setAttribute('alpha', new THREE.Float32BufferAttribute(alphas, 1));
     
     // 自定义着色器材质
     const material = new THREE.ShaderMaterial({
       uniforms: {
-        fadeDistance: { value: size * 0.8 },
-        centerIntensity: { value: 1.0 },
-        edgeIntensity: { value: 0.2 }
+        color: { value: new THREE.Color(color) },
+        fadePower: { value: 1.0 } // 渐变幂次，值越大渐变越明显
       },
       vertexShader: `
-        attribute vec4 color;
-        varying vec4 vColor;
+        attribute float alpha;
+        varying float vAlpha;
         
         void main() {
-          vColor = color;
+          vAlpha = alpha;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
       fragmentShader: `
-        varying vec4 vColor;
+        uniform vec3 color;
+        varying float vAlpha;
         
         void main() {
-          // 使用顶点颜色的alpha通道
-          gl_FragColor = vec4(vColor.rgb, vColor.a);
+          gl_FragColor = vec4(color, vAlpha);
         }
       `,
       transparent: true,
-      side: THREE.DoubleSide
+      depthWrite: false
     });
     
     this.mesh = new THREE.LineSegments(geometry, material);
-    this.mesh.rotation.x = -Math.PI / 2; // 让网格平放在XZ平面
   }
   
   getMesh() {
     return this.mesh;
   }
   
-  setFadeDistance(distance) {
-    this.mesh.material.uniforms.fadeDistance.value = distance;
+  setFadePower(power) {
+    this.mesh.material.uniforms.fadePower.value = power;
+  }
+  
+  setColor(color) {
+    this.mesh.material.uniforms.color.value.set(color);
   }
 }
