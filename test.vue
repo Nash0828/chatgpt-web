@@ -19,12 +19,6 @@ class D3Like {
     return new D3Like(Array.from(elements));
   }
 
-  // call方法：调用一个函数，传入当前选择集
-  call(fn, ...args) {
-    fn(this, ...args);
-    return this;
-  }
-
   // 属性操作
   attr(name, value) {
     if (value === undefined) {
@@ -33,8 +27,6 @@ class D3Like {
     this._elements.forEach(el => {
       if (value === null) {
         el.removeAttribute(name);
-      } else if (typeof value === 'function') {
-        el.setAttribute(name, value.call(el, el.__data__, this._elements.indexOf(el)));
       } else {
         el.setAttribute(name, value);
       }
@@ -48,11 +40,7 @@ class D3Like {
       return this._elements[0]?.style[name];
     }
     this._elements.forEach(el => {
-      if (typeof value === 'function') {
-        el.style.setProperty(name, value.call(el, el.__data__, this._elements.indexOf(el)), priority || '');
-      } else {
-        el.style.setProperty(name, value, priority || '');
-      }
+      el.style.setProperty(name, value, priority || '');
     });
     return this;
   }
@@ -63,11 +51,7 @@ class D3Like {
       return this._elements[0]?.textContent;
     }
     this._elements.forEach(el => {
-      if (typeof content === 'function') {
-        el.textContent = content.call(el, el.__data__, this._elements.indexOf(el));
-      } else {
-        el.textContent = content;
-      }
+      el.textContent = content;
     });
     return this;
   }
@@ -78,11 +62,7 @@ class D3Like {
       return this._elements[0]?.innerHTML;
     }
     this._elements.forEach(el => {
-      if (typeof content === 'function') {
-        el.innerHTML = content.call(el, el.__data__, this._elements.indexOf(el));
-      } else {
-        el.innerHTML = content;
-      }
+      el.innerHTML = content;
     });
     return this;
   }
@@ -93,10 +73,7 @@ class D3Like {
       return this._elements[0]?.classList.contains(className);
     }
     this._elements.forEach(el => {
-      const shouldAdd = typeof value === 'function' 
-        ? value.call(el, el.__data__, this._elements.indexOf(el))
-        : value;
-      if (shouldAdd) {
+      if (value) {
         el.classList.add(className);
       } else {
         el.classList.remove(className);
@@ -105,15 +82,20 @@ class D3Like {
     return this;
   }
 
+  // 添加/移除类（别名）
+  classedAdd(className) {
+    return this.classed(className, true);
+  }
+
+  classedRemove(className) {
+    return this.classed(className, false);
+  }
+
   // 事件监听
   on(event, handler, options) {
     this._elements.forEach(el => {
       if (handler === null) {
-        const stored = this._eventHandlers?.get(el);
-        if (stored) {
-          el.removeEventListener(event, stored);
-          this._eventHandlers.delete(el);
-        }
+        el.removeEventListener(event, this._eventHandlers?.get(el));
       } else {
         if (!this._eventHandlers) this._eventHandlers = new Map();
         this._eventHandlers.set(el, handler);
@@ -123,131 +105,11 @@ class D3Like {
     return this;
   }
 
-  // drag方法：实现拖拽功能
-  drag(dragHandler) {
-    // 如果没有传入handler，返回默认的drag行为
-    if (!dragHandler) {
-      dragHandler = {
-        onDragStart: null,
-        onDrag: null,
-        onDragEnd: null
-      };
-    }
-
-    this._elements.forEach(el => {
-      let startX = 0, startY = 0;
-      let initialX = 0, initialY = 0;
-      let isDragging = false;
-
-      const onMouseDown = (e) => {
-        e.preventDefault();
-        isDragging = true;
-        startX = e.clientX;
-        startY = e.clientY;
-        
-        // 获取元素的初始位置
-        const transform = el.getAttribute('transform');
-        if (transform) {
-          const match = transform.match(/translate\(([^,]+),([^)]+)\)/);
-          if (match) {
-            initialX = parseFloat(match[1]);
-            initialY = parseFloat(match[2]);
-          }
-        }
-        
-        // 触发dragstart回调
-        if (dragHandler.onDragStart) {
-          dragHandler.onDragStart.call(el, e, {
-            x: initialX,
-            y: initialY,
-            dx: 0,
-            dy: 0,
-            sourceEvent: e
-          });
-        }
-        
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
-      };
-
-      const onMouseMove = (e) => {
-        if (!isDragging) return;
-        
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        const newX = initialX + dx;
-        const newY = initialY + dy;
-        
-        // 触发drag回调
-        if (dragHandler.onDrag) {
-          dragHandler.onDrag.call(el, e, {
-            x: newX,
-            y: newY,
-            dx: dx,
-            dy: dy,
-            sourceEvent: e
-          });
-        }
-        
-        // 默认行为：更新transform属性
-        el.setAttribute('transform', `translate(${newX}, ${newY})`);
-      };
-
-      const onMouseUp = (e) => {
-        isDragging = false;
-        
-        // 触发dragend回调
-        if (dragHandler.onDragEnd) {
-          dragHandler.onDragEnd.call(el, e, {
-            x: initialX + (e.clientX - startX),
-            y: initialY + (e.clientY - startY),
-            dx: e.clientX - startX,
-            dy: e.clientY - startY,
-            sourceEvent: e
-          });
-        }
-        
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-      };
-
-      el.addEventListener('mousedown', onMouseDown);
-      
-      // 存储清理函数
-      if (!this._dragCleanups) this._dragCleanups = new Map();
-      this._dragCleanups.set(el, () => {
-        el.removeEventListener('mousedown', onMouseDown);
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
-      });
-    });
-    
-    return this;
-  }
-
-  // 移除drag功能
-  dragOff() {
-    this._elements.forEach(el => {
-      const cleanup = this._dragCleanups?.get(el);
-      if (cleanup) {
-        cleanup();
-        this._dragCleanups.delete(el);
-      }
-    });
-    return this;
-  }
-
   // 添加子元素
   append(type) {
     const newElements = [];
     this._elements.forEach(parent => {
-      let child;
-      if (typeof type === 'function') {
-        const tagName = type.call(parent, parent.__data__, this._elements.indexOf(parent));
-        child = document.createElementNS('http://www.w3.org/2000/svg', tagName);
-      } else {
-        child = document.createElementNS('http://www.w3.org/2000/svg', type);
-      }
+      const child = document.createElementNS('http://www.w3.org/2000/svg', type);
       parent.appendChild(child);
       newElements.push(child);
     });
@@ -258,16 +120,8 @@ class D3Like {
   insert(type, before) {
     const newElements = [];
     this._elements.forEach(parent => {
-      let child;
-      if (typeof type === 'function') {
-        const tagName = type.call(parent, parent.__data__, this._elements.indexOf(parent));
-        child = document.createElementNS('http://www.w3.org/2000/svg', tagName);
-      } else {
-        child = document.createElementNS('http://www.w3.org/2000/svg', type);
-      }
-      const refNode = typeof before === 'function' 
-        ? before.call(parent, parent.__data__, this._elements.indexOf(parent))
-        : parent.querySelector(before);
+      const child = document.createElementNS('http://www.w3.org/2000/svg', type);
+      const refNode = parent.querySelector(before);
       parent.insertBefore(child, refNode);
       newElements.push(child);
     });
@@ -286,11 +140,13 @@ class D3Like {
       return this._elements.map(el => el.__data__);
     }
 
+    // 处理更新、退出、进入选择集
     const update = [];
     const exit = [];
-    const enterData = [];
+    const enter = [];
 
     if (keyFunction) {
+      // 使用key函数进行更精确的数据绑定
       const dataMap = new Map();
       dataArray.forEach((d, i) => {
         const key = keyFunction(d, i);
@@ -308,10 +164,12 @@ class D3Like {
         }
       });
 
+      // 剩余的数据进入
       dataMap.forEach((d) => {
-        enterData.push(d);
+        enter.push(d);
       });
     } else {
+      // 简单索引绑定
       this._elements.forEach((el, i) => {
         if (i < dataArray.length) {
           update.push(el);
@@ -322,44 +180,28 @@ class D3Like {
       });
 
       for (let i = this._elements.length; i < dataArray.length; i++) {
-        enterData.push(dataArray[i]);
+        enter.push(dataArray[i]);
       }
     }
 
-    // 创建进入选择集
+    // 创建进入选择集（虚拟元素）
     const enterSelection = {
       append: (type) => {
         const newElements = [];
-        const parent = this._elements[0]?.parentNode;
-        if (parent) {
-          enterData.forEach((data, idx) => {
-            const el = document.createElementNS('http://www.w3.org/2000/svg', type);
-            el.__data__ = data;
-            parent.appendChild(el);
-            newElements.push(el);
-          });
-        }
+        enter.forEach(data => {
+          const el = document.createElementNS('http://www.w3.org/2000/svg', type);
+          el.__data__ = data;
+          // 这里需要父容器，暂时无法获取，需要外部传入
+          newElements.push(el);
+        });
         return new D3Like(newElements);
-      },
-      // 添加join方法支持
-      join: (enterFn) => {
-        if (enterFn) enterFn(enterSelection);
-        return new D3Like(update);
       }
     };
 
-    // 退出选择集
-    const exitSelection = new D3Like(exit);
-    
+    // 返回标准d3风格的选择集对象
     return {
       enter: () => enterSelection,
-      exit: () => exitSelection,
-      join: (enterFn, updateFn, exitFn) => {
-        if (enterFn) enterFn(enterSelection);
-        if (updateFn) updateFn(new D3Like(update));
-        if (exitFn) exitFn(exitSelection);
-        return new D3Like(update);
-      },
+      exit: () => new D3Like(exit).remove(),
       _groups: [update],
       _parents: [this._elements[0]?.parentNode]
     };
@@ -371,36 +213,24 @@ class D3Like {
       return this._elements[0]?.__data__;
     }
     this._elements.forEach(el => {
-      if (typeof value === 'function') {
-        el.__data__ = value.call(el, el.__data__, this._elements.indexOf(el));
-      } else {
-        el.__data__ = value;
-      }
+      el.__data__ = value;
     });
     return this;
   }
 
-  // 过渡动画
+  // 过渡动画（简化版）
   transition(duration = 250, ease = 'ease') {
     const transitions = [];
     this._elements.forEach(el => {
       const transition = {
-        _el: el,
-        _duration: duration,
-        _ease: ease,
-        _props: [],
-        
         attr: (name, value) => {
           const start = parseFloat(el.getAttribute(name)) || 0;
-          const end = typeof value === 'function' 
-            ? value.call(el, el.__data__, 0)
-            : parseFloat(value);
+          const end = parseFloat(value);
           const startTime = performance.now();
-          
           const animate = (currentTime) => {
             const elapsed = currentTime - startTime;
-            const progress = Math.min(1, elapsed / this._duration);
-            const eased = this._ease(progress, this._ease);
+            const progress = Math.min(1, elapsed / duration);
+            const eased = this._ease(progress, ease);
             const currentValue = start + (end - start) * eased;
             el.setAttribute(name, currentValue);
             if (progress < 1) requestAnimationFrame(animate);
@@ -408,18 +238,14 @@ class D3Like {
           requestAnimationFrame(animate);
           return transition;
         },
-        
         style: (name, value) => {
           const start = parseFloat(el.style[name]) || 0;
-          const end = typeof value === 'function'
-            ? value.call(el, el.__data__, 0)
-            : parseFloat(value);
+          const end = parseFloat(value);
           const startTime = performance.now();
-          
           const animate = (currentTime) => {
             const elapsed = currentTime - startTime;
-            const progress = Math.min(1, elapsed / this._duration);
-            const eased = this._ease(progress, this._ease);
+            const progress = Math.min(1, elapsed / duration);
+            const eased = this._ease(progress, ease);
             const currentValue = start + (end - start) * eased;
             el.style[name] = currentValue;
             if (progress < 1) requestAnimationFrame(animate);
@@ -427,22 +253,8 @@ class D3Like {
           requestAnimationFrame(animate);
           return transition;
         },
-        
         duration: (ms) => {
-          this._duration = ms;
-          return transition;
-        },
-        
-        ease: (fn) => {
-          this._ease = fn;
-          return transition;
-        },
-        
-        on: (event, handler) => {
-          if (event === 'end' && handler) {
-            // 简化处理，实际应该等待动画结束
-            setTimeout(handler, this._duration);
-          }
+          // 简化处理，实际应该返回新transition
           return transition;
         }
       };
@@ -452,12 +264,10 @@ class D3Like {
   }
 
   _ease(t, ease) {
-    if (typeof ease === 'function') return ease(t);
     switch(ease) {
       case 'linear': return t;
       case 'ease-in': return t * t;
       case 'ease-out': return t * (2 - t);
-      case 'ease-in-out': return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
       case 'ease': default: return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     }
   }
@@ -496,7 +306,7 @@ class D3Like {
     return this._elements;
   }
 
-  // 创建SVG
+  // SVG图形创建辅助方法
   static createSVG(width, height) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('width', width);
@@ -509,31 +319,12 @@ class D3Like {
 window.d3 = {
   select: D3Like.select,
   selectAll: D3Like.selectAll,
-  // 辅助函数
+  // 添加常用比例尺和辅助函数（可选）
   scaleLinear: () => ({
     domain: () => {},
     range: () => {},
     interpolate: () => {}
   }),
   max: (arr, fn) => Math.max(...arr.map(fn)),
-  min: (arr, fn) => Math.min(...arr.map(fn)),
-  // drag函数（全局）
-  drag: () => {
-    const dragObj = {
-      _handlers: {},
-      on: (event, handler) => {
-        dragObj._handlers[event] = handler;
-        return dragObj;
-      },
-      apply: (selection) => {
-        selection.drag({
-          onDragStart: dragObj._handlers.start,
-          onDrag: dragObj._handlers.drag,
-          onDragEnd: dragObj._handlers.end
-        });
-        return selection;
-      }
-    };
-    return dragObj;
-  }
+  min: (arr, fn) => Math.min(...arr.map(fn))
 };
